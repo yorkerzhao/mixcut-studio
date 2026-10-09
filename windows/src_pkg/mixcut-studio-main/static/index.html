@@ -23,6 +23,7 @@
         <a href="#tasks" data-view="tasks"><b>04</b> 任务结果</a>
         <a href="#stickers" data-view="stickers"><b>05</b> 贴图库</a>
         <a href="#schedules" data-view="schedules"><b>06</b> 定时任务</a>
+        <a href="#music-loop" data-view="music-loop"><b>07</b> 音乐循环视频</a>
       </nav>
       <main>
         <section id="assets" class="view">
@@ -88,6 +89,28 @@
           <form id="schedule-form" class="panel settings-grid"><label>任务名称<input name="name" value="素材持续监测"></label><label>开始时间<input name="start_at" type="datetime-local"></label><label>重复<select name="repeat"><option value="once">仅一次</option><option value="daily">每天</option><option value="weekly">每周</option></select></label><label>目标成片数<input name="target_count" type="number" min="1" max="500" value="50"></label><label>检查间隔（分钟）<input name="check_interval_minutes" type="number" min="1" max="1440" value="10"></label><label class="switch-label"><input name="enabled" type="checkbox"><span>启用任务</span></label><label>视频目录<span class="path-control"><input name="video_dir" id="schedule-video-dir"><button class="button schedule-folder-picker" data-kind="video" type="button">选择文件夹</button></span></label><label>音乐目录<span class="path-control"><input name="music_dir" id="schedule-music-dir"><button class="button schedule-folder-picker" data-kind="music" type="button">选择文件夹</button></span></label><label class="span-2">导出目录<span class="path-control"><input name="output_dir" id="schedule-output-dir"><button class="button schedule-folder-picker" data-kind="output" type="button">选择文件夹</button></span></label><label class="switch-label span-2"><input id="schedule-current" type="checkbox" checked><span>使用当前目录和剪辑设置（保存为快照，未来新增素材会被扫描）</span></label><div class="button-row span-2"><button class="button primary" type="submit">保存定时任务</button><button id="schedule-check" class="button" type="button">立即检查素材</button></div></form>
           <div id="schedule-active" class="notice">暂无运行中的定时任务。</div><div id="schedules-list" class="batch-list empty">正在读取定时任务…</div>
         </section>
+        <section id="music-loop" class="view" hidden>
+          <div class="page-heading"><div><p class="eyebrow">MUSIC LOOP VIDEO</p><h1>音乐循环视频</h1><p>导入 Cover Maker 的交接文档，按固定曲目顺序制作。成片时长由音乐决定。</p></div></div>
+          <form class="panel" onsubmit="return false">
+            <label>Set 文件夹或 YPP交接.txt 路径（每行一条）<textarea id="loop-paths" rows="3" placeholder="粘贴 Set 路径；也可选择包含多个 Set 的上一级文件夹"></textarea></label>
+            <button type="button" id="loop-pick" class="button">选择 Set 文件夹</button>
+            <div class="form-grid">
+              <label class="span-2">成品保存路径<span class="path-control"><input id="loop-output"><button type="button" id="loop-output-pick" class="button">选择文件夹</button></span></label>
+              <label class="span-2">音乐新根目录（仅路径迁移时填写）<span class="path-control"><input id="loop-music-root"><button type="button" id="loop-music-pick" class="button">选择文件夹</button></span></label>
+              <label>分辨率<select id="loop-resolution"><option value="source">沿用动态封面（优先直接复用画面）</option><option value="1280x720">1280 × 720</option><option value="1920x1080">1920 × 1080</option></select></label>
+              <label>转码帧率<select id="loop-fps"><option value="30">30 fps</option><option value="60">60 fps</option></select></label>
+              <label>并行数量<select id="loop-parallel"><option>1</option><option>2</option><option>3</option><option>4</option></select></label>
+              <label>音乐音量<input id="loop-volume" type="number" min="0" max="1" step="0.05" value="1"></label>
+              <label class="switch-label"><input id="loop-nonstop" type="checkbox" checked><span>无缝衔接（去首尾静音＋短过渡）</span></label>
+            </div>
+            <p class="field-help">每个 Set 独立制作，全部歌曲按交接顺序播放一次。开启无缝衔接后重新计算实际时间轴。两种制作模式共用调度，正在执行的原视频混剪先完成。</p>
+            <button type="button" id="loop-import" class="button primary">导入任务</button>
+          </form>
+          <div id="loop-message" class="notice">审核通过保留作品；审核不通过仅回收生成的作品目录；删除任务只移除记录。原音乐、动态封面和上游文件始终保留。</div>
+          <div class="button-row"><button id="loop-select" class="button">全选 / 取消</button><button id="loop-start" class="button">开始选中任务</button><button id="loop-pause" class="button">暂停选中任务</button><button id="loop-delete" class="button">删除选中任务</button><button id="loop-approve" class="button primary">一键审核</button><button id="loop-refresh" class="button">刷新状态</button></div>
+          <div class="button-row loop-cache"><span id="loop-cache-info">缓存按需统计</span><button id="loop-cache" class="button">统计缓存</button><button id="loop-clear-cache" class="button">清除闲置缓存</button></div>
+          <p id="loop-empty" class="field-help">尚未导入音乐 Set。</p><div id="loop-list"></div>
+        </section>
       </main>
     </div>
   </div>
@@ -95,5 +118,6 @@
   <template id="music-card-template"><article class="asset-card music-card"><div class="audio-icon">♫</div><div class="asset-info"><label class="select-line"><input type="checkbox" class="asset-select"><strong class="asset-name"></strong></label><p class="asset-meta"></p><button type="button" class="button audio-preview">试听</button></div></article></template>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
   <script src="/static/app.js" defer></script>
+  <script src="/static/loopmusic.js" defer></script>
 </body>
 </html>

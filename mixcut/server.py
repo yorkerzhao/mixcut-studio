@@ -125,6 +125,8 @@ class Application:
         self.preview_lock = threading.RLock()
         self.preview_worker = None
         self.recover()
+        from .loopmusic import LoopMusic
+        self.loop_music = LoopMusic(self, Store)
         from .scheduler import Scheduler
         self.scheduler = Scheduler(self)
 
@@ -148,7 +150,8 @@ class Application:
                 'sticker_catalog': self.sticker_catalog(),
                 'version': self.running_version,
                 'api_protocol': API_PROTOCOL,
-                'active_work': bool(self.executing_batches) or bool(self.preview_jobs) or any(batch['status'] in {'queued', 'running', 'pausing', 'stopping'}
+                'loop_music_available': True,
+                'active_work': self.loop_music.has_work() or bool(self.executing_batches) or bool(self.preview_jobs) or any(batch['status'] in {'queued', 'running', 'pausing', 'stopping'}
                                    for batch in self.store.batches()),
                 'ffmpeg_available': bool(shutil.which('ffmpeg') and shutil.which('ffprobe'))}
 
@@ -1586,6 +1589,11 @@ class Application:
                 last_prune = time.monotonic()
             candidates = [b for b in self.store.batches() if b['status'] == 'queued']
             if not candidates:
+                try:
+                    if self.loop_music.run_next():
+                        continue
+                except Exception:
+                    logging.exception('music-loop dispatcher failed; original queue remains available')
                 self.wake.wait(1)
                 self.wake.clear()
                 continue
@@ -2639,6 +2647,22 @@ class Handler(BaseHTTPRequestHandler):
                 if size < 0 or size > (18_000_000 if path == '/api/stickers/import' else 2_000_000):
                     raise ValueError('请求过大')
                 body = json.loads(self.rfile.read(size) or '{}')
+                if path == '/api/music-loop/reveal':
+                    task = self.app.loop_music.get(str(body['id']))
+                    target = Path(task.get('output_bundle', task['output_root']))
+                    if not target.exists():
+                        raise ValueError('输出尚未生成')
+                    reveal(target)
+                    return self.json_response({'ok': True})
+                if path == '/api/music-loop/import':
+                    return self.json_response(self.app.loop_music.import_tasks(body))
+                loop_action = re.fullmatch(r'/api/music-loop/([a-f0-9]{16})/(start|pause|delete|approve|reject|relocate)', path)
+                if loop_action:
+                    if loop_action[2] == 'relocate':
+                        return self.json_response(self.app.loop_music.relocate(loop_action[1], body.get('music_root')))
+                    return self.json_response(self.app.loop_music.action(*loop_action.groups()))
+                if path == '/api/music-loop/cache/clear':
+                    return self.json_response(self.app.loop_music.clear_cache())
                 if path == '/api/stickers/import':
                     return self.json_response(self.app.import_sticker(body))
                 if path == '/api/sticker-templates':
@@ -2729,6 +2753,8 @@ class Handler(BaseHTTPRequestHandler):
                     reveal(target)
                     return self.json_response({'ok': True})
                 if path == '/api/shutdown':
+                    if self.app.loop_music.active:
+                        raise ValueError('请先暂停音乐循环任务，等待后台停止后退出')
                     with self.app.review_job_lock:
                         if any(job['status'] == 'running' for job in self.app.review_jobs.values()):
                             raise ValueError('一键审核正在进行，请等待结束后退出')
@@ -2739,6 +2765,25 @@ class Handler(BaseHTTPRequestHandler):
                     threading.Thread(target=self.server.shutdown, daemon=True).start()
                     return
             else:
+                if path == '/api/music-loop/cache':
+                    return self.json_response(self.app.loop_music.cache_info())
+                if path == '/api/music-loop':
+                    return self.json_response({'tasks': self.app.loop_music.listing()})
+                if path in {'/api/music-loop/output', '/api/music-loop/frames', '/api/music-loop/frame'}:
+                    task = self.app.loop_music.get(query['id'][0])
+                    if task['status'] not in {'success', 'approved'}:
+                        raise ValueError('任务尚不可审核')
+                    target = Path(task['output_path'])
+                    if path == '/api/music-loop/output':
+                        return self.send_file(target)
+                    if task['status'] != 'success':
+                        raise ValueError('审核后的缩略图已清理')
+                    if not self.app.loop_music.frames.ready(task['thumbnails']['version'], task['thumbnails']['total']):
+                        raise ValueError('缩略图缓存已清除，点击重试重新准备')
+                    if path.endswith('/frames'):
+                        return self.json_response(task['thumbnails'])
+                    target = self.app.loop_music.frames.image(target, int(query['index'][0]), query.get('size', ['thumb'])[0], query.get('v', [None])[0])
+                    return self.send_file(target)
                 if path == '/api/schedules':
                     return self.json_response(self.app.scheduler.listing())
                 if path == '/api/stickers':
@@ -2825,7 +2870,8 @@ class Handler(BaseHTTPRequestHandler):
                 if path == '/api/manifest':
                     return self.json_response(self.app.batch(query['batch'][0]))
                 files = {'/': 'index.html', '/app.js': 'app.js', '/style.css': 'style.css',
-                         '/static/app.js': 'app.js', '/static/style.css': 'style.css'}
+                         '/static/app.js': 'app.js', '/static/style.css': 'style.css',
+                         '/static/loopmusic.js': 'loopmusic.js'}
                 if path in files:
                     return self.send_file(ROOT / 'static' / files[path], no_store=True)
             self.json_response({'error': '接口不存在'}, 404)
