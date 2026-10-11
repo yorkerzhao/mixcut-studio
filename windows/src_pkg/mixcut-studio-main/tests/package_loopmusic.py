@@ -25,6 +25,18 @@ def main():
         blocks=[]
         for n,p in enumerate(songs,1):blocks.append(f'[曲目 {n:02d}]\n名称：Hindi Song {n}\n音频路径：{p}\n原编号：{n}\n起始秒：{(n-1)*22}\n时长秒：22\nSHA256：{hashlib.sha256(p.read_bytes()).hexdigest()}')
         manifest.write_text(f'YPP音乐交接 TXT v1\n状态：已完成\nSet ID：package-set\n音乐来源原路径：{source}\n静态封面路径：{cover}\n动态封面路径：{motion}\n曲目总数：3\n===== 播放顺序开始 =====\n'+ '\n\n'.join(blocks)+'\n===== 播放顺序结束 =====\n===== 视频文案开始 =====\nEnglish title: Test\nHindi title: संगीत\n===== 视频文案结束 =====\n')
+        parent = root/'Sets'; parent.mkdir()
+        import shutil
+        shutil.move(setdir, parent/'Set 1')
+        setdir = parent/'Set 1'
+        for n in (2, 3):
+            destination = parent/f'Set {n}'
+            shutil.copytree(setdir, destination)
+            doc = destination/'YPP交接.txt'
+            doc.write_text(doc.read_text().replace('Set ID：package-set', f'Set ID：package-set-{n}'))
+        manifest = setdir/'YPP交接.txt'
+        motion = setdir/motion.name
+        cover = setdir/cover.name
         with socket.socket() as s:s.bind(('127.0.0.1',0));port=s.getsockname()[1]
         base=f'http://127.0.0.1:{port}'
         def api(path,body=None):
@@ -37,16 +49,17 @@ def main():
                     try:boot=api('/api/bootstrap');break
                     except OSError:time.sleep(.2)
                 else:raise AssertionError('Packaged server failed to start')
-                assert boot['version']=='1.7.1' and boot['api_protocol']==17
-                env=dict(os.environ,NODE_PATH=str(Path.home()/'.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules'),MIXCUT_TEST_URL=base,MIXCUT_LOOP_SET=str(setdir),MIXCUT_LOOP_OUTPUT=str(root/'outputs'),MIXCUT_LOOP_SCREENSHOT='/tmp/mixcut170-page.png')
+                assert boot['version']=='1.7.2' and boot['api_protocol']==17
+                env=dict(os.environ,NODE_PATH=str(Path.home()/'.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules'),MIXCUT_TEST_URL=base,MIXCUT_LOOP_SET=str(parent),MIXCUT_LOOP_OUTPUT=str(root/'outputs'),MIXCUT_LOOP_SCREENSHOT='/tmp/mixcut170-page.png')
                 subprocess.run([str(Path.home()/'.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node'),'tests/ui_loopmusic.cjs'],env=env,check=True)
                 output=next((root/'outputs').rglob('成品视频.mp4'))
                 ff('-xerror','-i',str(output),'-f','null','-')
                 assert all(p.is_file() for p in songs+[motion,cover,manifest])
                 assert api('/api/batches')==[]
                 assert api('/api/music-loop')['tasks']==[]
+                assert len(list((root/'outputs').rglob('成品视频.mp4')))==3
                 assert output.is_file() and (output.parent/'发布文案.txt').is_file()
-                print('Packaged 65-second music-led export fully decoded; approval retained output, record deletion preserved all files, old task store stayed empty.')
+                print('Packaged three concurrent music-led exports completed; one fully decoded; approval retained output, record deletion preserved all files, old task store stayed empty.')
             finally:
                 try:api('/api/shutdown',{})
                 except Exception:pass

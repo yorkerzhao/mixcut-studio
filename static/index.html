@@ -103,7 +103,7 @@
               <label>音乐音量<input id="loop-volume" type="number" min="0" max="1" step="0.05" value="1"></label>
               <label class="switch-label"><input id="loop-nonstop" type="checkbox" checked><span>无缝衔接（去首尾静音＋短过渡）</span></label>
             </div>
-            <p class="field-help">每个 Set 独立制作，全部歌曲按交接顺序播放一次，合成完成即可播放审核，不抽取缩略图。开启无缝衔接后重新计算实际时间轴。两种制作模式共用调度，正在执行的原视频混剪先完成。</p>
+            <p class="field-help">每个 Set 独立制作，全部歌曲按交接顺序播放一次，合成完成即可播放审核，不抽取缩略图。开启无缝衔接后重新计算实际时间轴。开始制作时采用当前并行数量，有空位自动补入等待任务。两种制作模式共用调度，正在执行的原视频混剪先完成。</p>
             <button type="button" id="loop-import" class="button primary">导入任务</button>
           </form>
           <div id="loop-message" class="notice">审核通过保留作品；审核不通过仅回收生成的作品目录；删除任务只移除记录。原音乐、动态封面和上游文件始终保留。</div>

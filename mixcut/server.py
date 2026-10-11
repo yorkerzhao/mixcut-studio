@@ -2654,12 +2654,16 @@ class Handler(BaseHTTPRequestHandler):
                         raise ValueError('输出尚未生成')
                     reveal(target)
                     return self.json_response({'ok': True})
+                if path == '/api/music-loop/start':
+                    return self.json_response(self.app.loop_music.start_tasks(body.get('ids'), body.get('parallel_tasks')))
                 if path == '/api/music-loop/import':
                     return self.json_response(self.app.loop_music.import_tasks(body))
                 loop_action = re.fullmatch(r'/api/music-loop/([a-f0-9]{16})/(start|pause|delete|approve|reject|relocate)', path)
                 if loop_action:
                     if loop_action[2] == 'relocate':
                         return self.json_response(self.app.loop_music.relocate(loop_action[1], body.get('music_root')))
+                    if loop_action[2] == 'start' and 'parallel_tasks' in body:
+                        return self.json_response(self.app.loop_music.start_tasks([loop_action[1]], body['parallel_tasks']))
                     return self.json_response(self.app.loop_music.action(*loop_action.groups()))
                 if path == '/api/music-loop/cache/clear':
                     return self.json_response(self.app.loop_music.clear_cache())

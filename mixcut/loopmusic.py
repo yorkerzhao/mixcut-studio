@@ -1,7 +1,7 @@
 """Music-led exports. Independent state and file policy; never consumes source media."""
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import datetime
 import copy
 import hashlib
@@ -208,6 +208,26 @@ class LoopMusic:
                 errors.append({'path': str(path), 'error': str(exc)})
         return {'imported': imported, 'errors': errors, 'tasks': self.listing()}
 
+    def start_tasks(self, identities, parallel):
+        if not isinstance(identities, list) or not identities or len(identities) > 200:
+            raise ValueError('请选择 1～200 条任务')
+        if isinstance(parallel, bool) or parallel not in (1, 2, 3, 4):
+            raise ValueError('并行数量必须为 1、2、3 或 4')
+        with self.lock:
+            # Validate before changing any record; dispatcher takes the same lock.
+            tasks = [self.get(identity) for identity in dict.fromkeys(identities)]
+            self.store.put('execution-settings', {'parallel_tasks': int(parallel)})
+            started = []
+            for task in tasks:
+                if task['status'] not in {'draft', 'paused', 'stalled_paused', 'failed', 'queued'}:
+                    continue
+                config = dict(task['config'], parallel_tasks=int(parallel))
+                self.update(task['id'], config=config, status='queued', cancel=False,
+                            error=None, stage='等待制作')
+                started.append(task['id'])
+        self.app.wake.set()
+        return {'started': started, 'parallel_tasks': int(parallel)}
+
     def action(self, identity, action):
         with self.lock:
             task = self.get(identity)
@@ -325,13 +345,33 @@ class LoopMusic:
             return {'removed': removed, 'skipped': skipped}
 
     def run_next(self):
-        tasks = [t for t in self.listing() if t['status'] == 'queued']
-        if not tasks:
-            return False
-        # This method runs on the existing single dispatcher. Old and new renders never overlap.
-        limit = tasks[0]['config']['parallel_tasks']
-        with ThreadPoolExecutor(max_workers=limit, thread_name_prefix='music-loop') as pool:
-            list(pool.map(self.execute, [t['id'] for t in tasks[:limit]]))
+        with self.lock:
+            tasks = [t for t in self.listing() if t['status'] == 'queued']
+            if not tasks:
+                return False
+            # Old persisted tasks remain usable before the first new batch-start request.
+            fallback = tasks[0]['config'].get('parallel_tasks', 1)
+            limit = self.store.get('execution-settings', {}).get('parallel_tasks', fallback)
+        # The existing dispatcher owns this pool; original and loop renders never overlap.
+        # Keep vacant slots filled, including tasks queued while an earlier task is running.
+        with ThreadPoolExecutor(max_workers=4, thread_name_prefix='music-loop') as pool:
+            pending = {}
+            while not self.app.closing.is_set():
+                with self.lock:
+                    limit = self.store.get('execution-settings', {}).get('parallel_tasks', limit)
+                    queued = [t for t in self.listing()
+                              if t['status'] == 'queued' and t['id'] not in pending.values()]
+                    for task in queued[:max(0, limit - len(pending))]:
+                        pending[pool.submit(self.execute, task['id'])] = task['id']
+                if not pending:
+                    break
+                completed, _ = wait(pending, timeout=.25, return_when=FIRST_COMPLETED)
+                for future in completed:
+                    pending.pop(future)
+                    future.result()
+                # Return control between idle waves so the original queue keeps priority.
+                if not pending:
+                    break
         return True
 
     def execute(self, identity):

@@ -109,6 +109,54 @@ class LoopTests(unittest.TestCase):
         self.assertEqual([1,2,3],[s['original_number'] for s in task['music']])
         self.assertFalse(self.service.active)
 
+    def test_bulk_start_validates_atomically_and_uses_current_parallel(self):
+        identity = self.imported(parallel_tasks=1)
+        with self.assertRaises(ValueError):
+            self.service.start_tasks([identity, 'missing'], 3)
+        self.assertEqual('draft', self.service.get(identity)['status'])
+        for value in (0, 5, True, '3'):
+            with self.assertRaises(ValueError):
+                self.service.start_tasks([identity], value)
+        self.service.start_tasks([identity], 3)
+        self.assertEqual(3, self.service.get(identity)['config']['parallel_tasks'])
+        self.assertEqual('queued', self.service.get(identity)['status'])
+
+    def test_pool_fills_late_arrivals_and_replaces_finished_task(self):
+        first = self.imported(parallel_tasks=3)
+        identities = [first]
+        for n in range(1, 4):
+            task = copy.deepcopy(self.service.get(first))
+            task.update(id=f'{n:016x}', created_at=task['created_at']+n)
+            self.service.store.put('task:'+task['id'], task)
+            identities.append(task['id'])
+        entered = {identity: threading.Event() for identity in identities}
+        release = {identity: threading.Event() for identity in identities}
+        def execute(identity):
+            self.service.update(identity, status='running')
+            entered[identity].set()
+            if not release[identity].wait(8):
+                raise AssertionError('Worker did not receive release')
+            self.service.update(identity, status='success')
+        self.service.action(first, 'start')
+        with patch.object(self.service, 'execute', side_effect=execute):
+            worker = threading.Thread(target=self.service.run_next)
+            worker.start()
+            try:
+                self.assertTrue(entered[first].wait(3))
+                self.service.start_tasks(identities[1:], 3)
+                self.assertTrue(entered[identities[1]].wait(3))
+                self.assertTrue(entered[identities[2]].wait(3))
+                self.assertFalse(entered[identities[3]].is_set())
+                release[first].set()
+                self.assertTrue(entered[identities[3]].wait(3))
+                self.assertFalse(release[identities[1]].is_set())
+                self.assertFalse(release[identities[2]].is_set())
+            finally:
+                for event in release.values(): event.set()
+                worker.join(5)
+            self.assertFalse(worker.is_alive())
+        self.assertTrue(all(event.is_set() for event in entered.values()))
+
     def test_stalled_task_releases_dispatcher(self):
         identity=self.imported(nonstop_music=False);self.service.action(identity,'start')
         with patch('mixcut.loopmusic._probe',return_value={'streams':[{'codec_type':'video'}],'format':{'duration':'1'}}), patch('mixcut.loopmusic.run_watched',side_effect=RenderStalled('stalled')):

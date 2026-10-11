@@ -15,7 +15,7 @@
   const element = (tag, className, text) => { const el=document.createElement(tag); if(className)el.className=className; if(text!==undefined)el.textContent=text; return el; };
   const button = (text, fn) => { const b=element('button','button',text); b.type='button'; b.onclick=async()=>{if(b.disabled)return;b.disabled=true;try{await fn();}catch(e){message(e.message,true);}finally{b.disabled=false;}}; return b; };
   const close = card => { card.detail.hidden=true; card.video?.pause(); if(card.toggle) card.toggle.textContent='查看与审核'; };
-  const act = async (id, action) => { await api(`/api/music-loop/${id}/${action}`,{}); await refresh(); };
+  const act = async (id, action) => { await api(`/api/music-loop/${id}/${action}`,action==='start'?{parallel_tasks:Number($('#loop-parallel').value)}:{}); await refresh(); };
   const draw = list => {
     tasks=list;
     for(const [id,card] of cards) if(!list.some(t=>t.id===id)){close(card);card.node.remove();cards.delete(id);selected.delete(id);}
@@ -63,7 +63,7 @@
   async function refresh(){if(fetching)return;fetching=true;try{const data=await api('/api/music-loop');draw(data.tasks);}catch(e){message(e.message,true);}finally{fetching=false;}}
   const bulk = async action => {
     if(busy)return;busy=true;
-    try{const targets=tasks.filter(t=>selected.has(t.id));if(!targets.length)throw new Error('请先选择任务');for(const t of targets){if(action==='start'&&!['draft','paused','failed','stalled_paused'].includes(t.status))continue;await api(`/api/music-loop/${t.id}/${action}`,{});}await refresh();}
+    try{const targets=tasks.filter(t=>selected.has(t.id));if(!targets.length)throw new Error('请先选择任务');if(action==='start'){await api('/api/music-loop/start',{ids:targets.map(t=>t.id),parallel_tasks:Number($('#loop-parallel').value)});}else{for(const t of targets)await api(`/api/music-loop/${t.id}/${action}`,{});}await refresh();}
     catch(e){message(e.message,true);}finally{busy=false;}
   };
   const viewChanged=()=>{
