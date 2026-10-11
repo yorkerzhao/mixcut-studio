@@ -9,8 +9,8 @@ const {chromium}=require('playwright');const assert=require('assert');
   await page.locator('#loop-import').click();await page.locator('.loop-task').first().waitFor();
   await page.locator('#loop-select').click();await page.locator('#loop-start').click();
   const card=page.locator('.loop-task').first();await card.getByRole('button',{name:'查看与审核',exact:true}).waitFor({timeout:60000});
-  await card.getByRole('button',{name:'查看与审核',exact:true}).click();await card.locator('.keyframe img').first().waitFor();
-  assert.equal(await card.locator('.keyframe').count(),3);
+  await card.getByRole('button',{name:'查看与审核',exact:true}).click();await card.locator('video').waitFor();
+  assert.equal(await card.locator('.keyframe').count(),0);
   await page.waitForTimeout(3400);assert.equal(await card.locator('.loop-details').isVisible(),true);
   await card.locator('video').evaluate(async v=>{v.muted=true;await v.play();});
   assert.equal(await card.locator('video').evaluate(v=>v.paused),false);
@@ -22,6 +22,6 @@ const {chromium}=require('playwright');const assert=require('assert');
   await page.screenshot({path:process.env.MIXCUT_LOOP_SCREENSHOT,fullPage:true});
   await card.getByRole('button',{name:'删除任务',exact:true}).click();await card.waitFor({state:'detached'});
   await page.locator('a[data-view="settings"]').click();await page.locator('#settings').waitFor({state:'visible'});assert.equal(await page.locator('#settings').isVisible(),true);
-  assert.deepEqual(errors,[]);console.log('Music-loop browser acceptance passed: import, real rendering, pre-generated frames, stable expansion, collapse pauses playback, approval, record deletion, original page navigation.');
+  assert.deepEqual(errors,[]);console.log('Music-loop browser acceptance passed: import, real rendering, no frame extraction, stable expansion, collapse pauses playback, approval, record deletion, original page navigation.');
  }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exit(1)});

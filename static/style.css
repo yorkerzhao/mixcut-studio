@@ -25,6 +25,4 @@
 #music-loop .loop-task{margin-top:16px}#music-loop .loop-heading{display:flex;align-items:center;gap:12px}
 #music-loop .loop-heading input[type=checkbox]{width:18px;height:18px;flex:0 0 18px;margin:0}#music-loop .loop-heading strong{flex:1;min-width:0;overflow-wrap:anywhere}#music-loop .loop-details{margin-top:18px}
 #music-loop video{display:block;width:min(100%,640px);margin:16px 0}#music-loop .loop-cache{margin-top:14px}
-#music-loop .notice{white-space:pre-line}#music-loop .keyframe{overflow:visible}
-#music-loop .keyframe:hover{z-index:2}#music-loop .keyframe:hover img{position:relative;transform:scale(2);box-shadow:0 6px 24px #0005}
-#music-loop .keyframe-grid{margin:20px 0}#music-loop .keyframe img{border-radius:4px}
+#music-loop .notice{white-space:pre-line}

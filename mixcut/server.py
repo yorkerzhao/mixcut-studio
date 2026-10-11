@@ -2769,21 +2769,11 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json_response(self.app.loop_music.cache_info())
                 if path == '/api/music-loop':
                     return self.json_response({'tasks': self.app.loop_music.listing()})
-                if path in {'/api/music-loop/output', '/api/music-loop/frames', '/api/music-loop/frame'}:
+                if path == '/api/music-loop/output':
                     task = self.app.loop_music.get(query['id'][0])
                     if task['status'] not in {'success', 'approved'}:
                         raise ValueError('任务尚不可审核')
-                    target = Path(task['output_path'])
-                    if path == '/api/music-loop/output':
-                        return self.send_file(target)
-                    if task['status'] != 'success':
-                        raise ValueError('审核后的缩略图已清理')
-                    if not self.app.loop_music.frames.ready(task['thumbnails']['version'], task['thumbnails']['total']):
-                        raise ValueError('缩略图缓存已清除，点击重试重新准备')
-                    if path.endswith('/frames'):
-                        return self.json_response(task['thumbnails'])
-                    target = self.app.loop_music.frames.image(target, int(query['index'][0]), query.get('size', ['thumb'])[0], query.get('v', [None])[0])
-                    return self.send_file(target)
+                    return self.send_file(Path(task['output_path']))
                 if path == '/api/schedules':
                     return self.json_response(self.app.scheduler.listing())
                 if path == '/api/stickers':

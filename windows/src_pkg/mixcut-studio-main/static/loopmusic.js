@@ -41,7 +41,7 @@
           card.toggle=button('查看与审核',async()=>{
             if(!card.detail.hidden){close(card);return;}
             card.detail.hidden=false;card.toggle.textContent='收起';
-            if(card.loadedVersion===task.thumbnails?.version)return;
+            if(card.loadedOutput===task.output_path)return;
             card.detail.replaceChildren();
             const controls=element('div','button-row');
             controls.append(button('通过审核',()=>act(task.id,'approve')),button('收起',()=>close(card)),button('审核不通过',async()=>{
@@ -49,14 +49,7 @@
             }));
             card.video=element('video');card.video.controls=true;card.video.preload='none';card.video.src=`/api/music-loop/output?id=${task.id}`;
             const order=element('details');order.append(element('summary',null,'查看固定曲目顺序'));const ol=element('ol');task.music.forEach(song=>ol.append(element('li',null,song.name)));order.append(ol);
-            const grid=element('div','keyframe-grid');
-            const data=await api(`/api/music-loop/frames?id=${task.id}`);
-            // Hover enlarges the exact same generated image, avoiding mismatched caches.
-            for(const frame of data.frames){
-              const cell=element('button','keyframe');cell.type='button';const img=element('img');img.loading='lazy';img.alt=`${fmt(frame.time)} 缩略图`;img.src=`/api/music-loop/frame?id=${task.id}&index=${frame.index}&size=thumb&v=${data.version}`;
-              cell.append(img,element('time',null,fmt(frame.time)));cell.onclick=()=>{card.video.currentTime=frame.time;};grid.append(cell);
-            }
-            card.detail.append(controls,card.video,order,element('p','field-help',`每 30 秒一张 · 共 ${data.total} 张`),grid);card.loadedVersion=data.version;
+            card.detail.append(controls,card.video,order);card.loadedOutput=task.output_path;
           });card.actions.append(card.toggle);
         }else if(!['success'].includes(task.status)){close(card);}
         if(['draft','paused','failed','stalled_paused'].includes(task.status))card.actions.append(button('修复音乐路径',async()=>{

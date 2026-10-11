@@ -144,15 +144,19 @@ class LoopTests(unittest.TestCase):
         run('-f','lavfi','-i','testsrc2=size=160x90:rate=30:duration=1','-c:v','libx264','-pix_fmt','yuv420p',str(self.motion))
         self.write_handoff(duration=3)
         identity=self.imported(nonstop_music=True)
-        self.service.action(identity,'start');self.service.run_next()
+        self.service.action(identity,'start')
+        with patch.object(self.service.frames,'prepare',side_effect=AssertionError('Music Set must never extract frames')):
+            self.service.run_next()
         task=self.service.get(identity)
         self.assertEqual('success',task['status'],task.get('error'))
         self.assertGreater(task['actual_duration'],7.8);self.assertLess(task['actual_duration'],8.1)
-        self.assertTrue(self.service.frames.ready(task['thumbnails']['version'],task['thumbnails']['total']))
+        self.assertIsNone(task.get('thumbnails'))
+        self.assertFalse(any((self.service.store.directory/'keyframes').rglob('*.jpg')))
         output=Path(task['output_path']);inode=output.stat().st_ino
         # Decode the entire actual export to catch timestamp and loop-boundary failures.
         run('-xerror','-i',str(output),'-f','null','-')
-        self.service.clear_cache();self.service.action(identity,'start');self.service.run_next()
+        self.service.clear_cache()
+        self.assertEqual('success',self.service.get(identity)['status'])
         task=self.service.get(identity);self.assertEqual('success',task['status'],task.get('error'))
         self.assertEqual(inode,output.stat().st_ino)
         self.service.action(identity,'approve');self.assertTrue(output.is_file())

@@ -228,8 +228,8 @@ class LoopMusic:
             elif action == 'approve':
                 if task['status'] == 'approved':
                     return task
-                if task['status'] != 'success' or not self.frames.ready(task['thumbnails']['version'], task['thumbnails']['total']):
-                    raise ValueError('视频和缩略图全部完成后才能审核')
+                if task['status'] != 'success':
+                    raise ValueError('视频制作完成后才能审核')
                 self.check_output(task)
                 self.cleanup(task)
                 self.update(identity, status='approved', stage='已审核，作品保留原处')
@@ -254,7 +254,7 @@ class LoopMusic:
             raise ValueError('成品文件已变化，请检查后再审核')
 
     def cleanup(self, task):
-        preview = task.get('thumbnails', {})
+        preview = task.get('thumbnails') or {}
         if preview.get('version'):
             self.frames.remove(preview['version'])
         shutil.rmtree(self.store.directory / 'work' / task['id'], ignore_errors=True)
@@ -313,7 +313,7 @@ class LoopMusic:
                 if task['id'] in self.active or task['status'] == 'queued':
                     skipped += 1
                     continue
-                preview = task.get('thumbnails', {})
+                preview = task.get('thumbnails') or {}
                 if preview.get('version'):
                     self.frames.remove(preview['version'])
                     with self.frames.guard:
@@ -321,8 +321,6 @@ class LoopMusic:
                 work = self.store.directory / 'work' / task['id']
                 for entry in work.glob('*'):
                     if entry.name != 'result.json' and entry.is_file(): entry.unlink()
-                if task['status'] == 'success':
-                    self.update(task['id'], status='paused', stage='缩略图缓存已清理，点击开始重新准备')
                 removed += 1
             return {'removed': removed, 'skipped': skipped}
 
@@ -491,11 +489,9 @@ class LoopMusic:
                 lines.extend([f"{n+1:02d}. {song['name']}", f'起始秒：{elapsed:.3f}', '音频路径：' + song['path'], ''])
                 elapsed += length
             (folder / '曲目与来源.txt').write_text('\n'.join(lines), encoding='utf-8')
-            self.update(identity, status='thumbnails', stage='正在生成审核缩略图', progress=.96, actual_duration=actual)
-            preview = self.frames.prepare(output, cancelled)
             if cancelled():
                 raise InterruptedError('任务已暂停')
-            self.update(identity, status='success', stage='可审核', progress=1, thumbnails=preview,
+            self.update(identity, status='success', stage='可审核', progress=1, thumbnails=None,
                         output_stamp=file_stamp(output), actual_duration=actual, error=None)
         except InterruptedError:
             self.update(identity, status='paused', stage='已暂停，点击开始继续', cancel=False)
