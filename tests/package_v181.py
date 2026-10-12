@@ -25,7 +25,7 @@ def main():
     for _ in range(100):
      try:boot=api('/api/bootstrap');break
      except OSError:time.sleep(.1)
-    assert boot['version']=='1.8.1'
+    assert boot['version']=='1.8.2'
     batch=api('/api/plan',{'config':{'duration_basis':'music','music_mode':'folder','count':1,'width':640,'height':360,'fps':24,'hardware':'software_fast','output_dir':str(root/'exports'),'include_track_titles':True}})
     assert batch['config']['nonstop_music'] is False
     item=batch['items'][0]
@@ -45,7 +45,26 @@ def main():
     assert item['result']['played_music'][1]['title'].endswith('去重 02')
     ff('-xerror','-i',item['output_path'],'-f','null','-')
     assert all(Path(s['path']).exists() for s in tracks)
-    print('V1.8.1 packaged trailing-number acceptance passed: suffix 01/02 first, five songs once, direct join default, video loop, full output decode, original music retained.')
+    # A real one-song folder must also plan and render through the frozen application.
+    import shutil
+    single_root=root/'single-library';single_folder=single_root/'single';single_folder.mkdir(parents=True)
+    first=next(t for t in tracks if Path(t['path']).stem.endswith('去重 01'))
+    shutil.copy2(first['path'],single_folder/Path(first['path']).name)
+    api('/api/scan',{'video_dir':str(root),'music_dir':str(single_root)})
+    single=api('/api/plan',{'config':{'duration_basis':'music','music_mode':'folder','count':1,'video_ids':[media._asset(video,'video')['id']],'width':640,'height':360,'fps':24,'hardware':'software_fast','output_dir':str(root/'exports-single')}})
+    assert len(single['items'][0]['music'])==1
+    assert '02' in single['items'][0]['music_order_warning']
+    api(f"/api/batches/{single['id']}/start",{})
+    for _ in range(300):
+     current=next(b for b in api('/api/batches') if b['id']==single['id']);single_item=current['items'][0]
+     if single_item['status']=='failed':raise AssertionError(single_item.get('error'))
+     if single_item['status']=='success':break
+     time.sleep(.1)
+    else:raise AssertionError('single-song render timeout')
+    assert .9<single_item['result']['duration']<1.2
+    assert len(single_item['result']['played_music'])==1
+    ff('-xerror','-i',single_item['output_path'],'-f','null','-')
+    print('V1.8.2 packaged trailing-number acceptance passed: suffix 01/02 first, five songs once, direct join default, video loop, full output decode, original music retained; one-song folder plans and renders with non-blocking warning.')
    finally:
     try:api('/api/shutdown',{})
     except Exception:pass

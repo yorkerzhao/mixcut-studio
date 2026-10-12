@@ -36,9 +36,18 @@ class MusicLedPlanningTests(unittest.TestCase):
  def test_legacy_folder_still_repeats_music(self):
   order,total=__import__('mixcut.foldermusic',fromlist=['allocate']).allocate(songs(),200,{},random.Random(0))
   self.assertGreater(len(order),5);self.assertGreaterEqual(total,200)
- def test_missing_anchors_clear_error(self):
-  with self.assertRaisesRegex(ValueError,'01、02'):
-   musicled.choose_music(songs()[2:],{'music_mode':'folder'},random.Random(0))
+ def test_missing_anchors_do_not_block_complete_folder(self):
+  for subset in [songs()[:1],songs()[1:2],songs()[2:],songs()[:1]+songs()[2:]]:
+   order=musicled.choose_music(subset,{'music_mode':'folder'},random.Random(0))
+   self.assertEqual(len(subset),len(order))
+   self.assertEqual({s['id'] for s in subset},{s['id'] for s in order})
+   if subset[0]['id']=='1':self.assertEqual('1',order[0]['id'])
+ def test_suffix_warning_uses_same_number_rule_as_order(self):
+  from mixcut import foldermusic
+  pair=[dict(songs()[0],path='/music/A/track-去重 01.mp3'),dict(songs()[1],path='/music/A/track-去重 02.mp3')]
+  item={'music':pair};foldermusic.describe(item);self.assertEqual('',item['music_order_warning'])
+  item={'music':pair[:1]};foldermusic.describe(item)
+  self.assertIn('02',item['music_order_warning']);self.assertIn('继续规划',item['music_order_warning'])
  def test_nonfinite_duration_rejected(self):
   with self.assertRaises(ValueError):musicled.fit_segments([{'duration':1}],float('inf'))
 

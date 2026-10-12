@@ -112,10 +112,14 @@ def allocate(songs, target, config, rng):
 def describe(item):
     songs = item.get('music', [])
     anchors = opening_tracks(songs)
-    missing = [number for number in ('01', '02') if not any(
-        re.match(r'^\s*' + number + r'(?!\d)', Path(song.get('path') or song.get('name', '')).stem)
-        for song in anchors)]
-    item['music_order_warning'] = ('未找到编号 ' + '、'.join(missing) + ' 的歌曲，无法完整固定前两首。') if missing else ''
+    def number(song):
+        name = Path(song.get('path') or song.get('name', '')).stem
+        trailing = re.search(r'(?<!\d)(\d{2})\s*$', name)
+        leading = re.match(r'^\s*0([12])(?!\d)', name)
+        return int(trailing[1]) if trailing else int(leading[1]) if leading else None
+    found = {number(song) for song in anchors}
+    missing = [f'{n:02d}' for n in (1, 2) if n not in found]
+    item['music_order_warning'] = ('未找到编号 ' + '、'.join(missing) + ' 的歌曲；已使用现有歌曲继续规划，已有编号歌曲优先，其余随机排列。') if missing else ''
     item['music_unique_count'] = len({song['id'] for song in songs})
     item['music_play_count'] = len(songs)
     size = max(1, int(item.get('music_folder_song_count', item['music_unique_count'])))

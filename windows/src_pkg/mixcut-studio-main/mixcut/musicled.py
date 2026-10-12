@@ -23,8 +23,6 @@ def choose_music(songs, config, rng, usage=None):
     mode = config.get('music_mode', 'pool')
     if mode == 'folder':
         anchors = opening_tracks(songs)
-        if len(anchors) != 2:
-            raise ValueError('单文件夹音乐需要编号 01、02 的两首歌曲，请检查文件名')
         ids = {s['id'] for s in anchors}
         rest = [s for s in songs if s['id'] not in ids]
         rng.shuffle(rest)
