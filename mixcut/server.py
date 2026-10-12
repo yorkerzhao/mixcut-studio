@@ -33,6 +33,7 @@ from .keyframes import KeyframeCache
 from .lockfile import LockUnavailable, acquire as acquire_lock, release as release_lock
 from .naming import export_filename, music_folders, music_styles, tag_music_style
 from .trash import move_to_trash
+from .planner import video_plan_key
 from .runtime import API_PROTOCOL, activate_bundled_tools, app_version, data_root, resource_root
 
 # ROOT keeps holding read-only resources so existing callers stay valid; DATA is the
@@ -702,6 +703,8 @@ class Application:
             if self.scan_job and self.scan_job['status'] in {'discovering', 'analyzing'}:
                 raise ValueError('素材库仍在扫描，请等待完成后再生成方案')
         config = dict(body.get('config', {}))
+        if config.get('duration_basis', 'video') not in {'video', 'music'}:
+            raise ValueError('时长依据无效')
         template, layers = self.resolve_sticker_template(config.get('sticker_template_id'))
         config['sticker_template'] = template
         config['sticker_layers'] = layers
@@ -714,7 +717,7 @@ class Application:
         if isinstance(concurrency, bool) or str(concurrency) not in {'1', '2', '3', '4'}:
             raise ValueError('并行剪辑数量须为 1、2、3 或 4')
         config['parallel_tasks'] = int(concurrency)
-        config['nonstop_music'] = str(config.get('nonstop_music', 'true')).lower() not in {'false', '0'}
+        config['nonstop_music'] = str(config.get('nonstop_music', 'false' if config.get('duration_basis') == 'music' else 'true')).lower() not in {'false', '0'}
         config['include_track_titles'] = str(config.get('include_track_titles', 'false')).lower() == 'true'
         for field, default in [('width', 1280), ('height', 720), ('fps', 30)]:
             config[field] = int(config.get(field, default))
@@ -842,6 +845,13 @@ class Application:
         root = batch['config'].get('music_root') or self.store.get('library', {}).get('music_dir')
         item['music'] = [tag_music_style(song, root) for song in order]
         item['music_total_duration'] = sum(float(song['duration']) for song in order)
+        if batch['config'].get('duration_basis') == 'music':
+            from .musicled import fit_segments
+            item['duration'] = item['music_total_duration']
+            item['segments'] = fit_segments(item['segments'], item['duration'])
+            item['video_fingerprint'] = self._fingerprint(video_plan_key(item['segments'], batch['config'].get('fps', 30)))
+            item.pop('nonstop', None)
+            item.pop('planned_duration', None)
         item['music_fingerprint'] = self._fingerprint(tuple(song['id'] for song in order))
         item['music_source_folders'] = music_folders(item['music'])
         item['music_styles'] = music_styles(item['music'], root)
@@ -902,6 +912,9 @@ class Application:
             if other is not item:
                 for song in other.get('music', []):
                     usage[song['id']] += 1
+        if batch['config'].get('duration_basis') == 'music':
+            from .musicled import choose_music
+            return choose_music(music, batch['config'], random.Random(time.time_ns()), usage)
         old_ids = tuple(song['id'] for song in item.get('music', []))
         used_orders = {tuple(song['id'] for song in other['music']) for other in batch['items'] if other is not item}
         for attempt in range(24):
@@ -999,6 +1012,15 @@ class Application:
                     grouped = foldermusic.groups([a for a in batch['assets'] if str(a.get('mime_type', '')).startswith('audio/') and a['id'] not in blocked], config.get('music_root'))
                     if index < 2 and len(foldermusic.opening_tracks(grouped.get(item['music_folder'], []))) == 2:
                         raise ValueError('前两首自动固定为01、02；需要手动调整请拖动歌曲或使用上下箭头')
+                    if config.get('duration_basis') == 'music':
+                        positions = [n for n in range(2, len(item['music'])) if n != index]
+                        if not positions:
+                            raise ValueError('没有其他可随机换位的歌曲')
+                        other = rng.choice(positions)
+                        order = list(item['music'])
+                        order[index], order[other] = order[other], order[index]
+                        self._set_item_music(batch, item, order)
+                        return
                     candidates = [song for song in grouped.get(item['music_folder'], []) if song['id'] != item['music'][index]['id']]
                     if not candidates:
                         raise ValueError('该文件夹没有其他可替换歌曲')
@@ -1018,8 +1040,8 @@ class Application:
                             usage[song['id']] += 1
                 remaining_duration = sum(float(song['duration']) for n, song in enumerate(current) if n != index)
                 candidates = [song for song in batch['assets'] if song['id'] in selected and song['id'] not in ids
-                              and remaining_duration + float(song['duration']) + 1e-7 >= float(item['duration']) +
-                              min(float(config.get('music_margin_seconds', 0)), float(item['duration']) * 0.005)]
+                              and (config.get('duration_basis') == 'music' or remaining_duration + float(song['duration']) + 1e-7 >= float(item['duration']) +
+                              min(float(config.get('music_margin_seconds', 0)), float(item['duration']) * 0.005))]
                 if not candidates:
                     raise ValueError('没有满足时长和任务内去重要求的替换歌曲')
                 least = min(usage[song['id']] for song in candidates)
@@ -1032,13 +1054,29 @@ class Application:
             selected = set(config.get('video_ids') or [])
             threshold = float(config.get('min_source_duration_minutes', 0)) * 60
             current = item['segments'][index]
-            videos = [asset for asset in batch['assets'] if asset['id'] in selected
+            videos = [asset for asset in batch['assets'] if (asset['id'] in selected or (not selected and str(asset.get('mime_type', '')).startswith('video/')))
                       and float(asset['duration']) > threshold and asset['id'] != current['asset_id']]
             videos = self.allowed_videos(videos)
             if config.get('mode') == 'multi' and config.get('within_group'):
                 other = next((part for n, part in enumerate(item['segments']) if n != index), None)
                 group = config.get('groups', {}).get(other['asset_id']) if other else None
                 videos = [video for video in videos if group and config.get('groups', {}).get(video['id']) == group]
+            if config.get('duration_basis') == 'music':
+                from .musicled import fit_segments, video_segments
+                if not videos: raise ValueError('没有其他可替换视频')
+                if config.get('mode', 'single') == 'single':
+                    updated = video_segments(videos, item['duration'], config, rng)
+                else:
+                    source = rng.choice(videos)
+                    replacement = {'asset_id':source['id'],'path':source['path'],'start':0.,
+                                   'duration':min(float(source['duration']),float(current['duration']))}
+                    updated = list(item['segments'])
+                    updated[index:index+1] = fit_segments([replacement], float(current['duration']))
+                item['segments'] = updated
+                item['video_assets'] = [a for a in batch['assets'] if any(s['asset_id']==a['id'] for s in updated)]
+                item['video_fingerprint'] = self._fingerprint(planner.video_plan_key(updated,config.get('fps',30)))
+                self._update_plan_counts(batch)
+                return
             occupied = defaultdict(list)
             protected = defaultdict(list)
             usage = defaultdict(int)

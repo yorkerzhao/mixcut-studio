@@ -109,7 +109,7 @@ class MusicEdges:
     def prepare(self, item, cancelled=lambda: False, progress=lambda done,total: None):
         prepared = copy.deepcopy(item)
         songs = prepared['music']
-        if prepared.get('music_folder'):
+        if prepared.get('music_folder') and prepared.get('duration_basis') != 'music':
             return self._prepare_folder(prepared, cancelled, progress)
         for number, song in enumerate(songs):
             progress(number, len(songs))
@@ -124,7 +124,7 @@ class MusicEdges:
         available = sum(lengths) - sum(fades)
         planned = float(item.get('planned_duration', item['duration']))
         # Small allowance for codec/container duration rounding, never pad missing sound.
-        target = min(planned, max(0., available - .05))
+        target = available if prepared.get('duration_basis') == 'music' else min(planned, max(0., available - .05))
         if target <= .1: raise ValueError('没有可制作成片的有效音乐')
         prepared.update(planned_duration=planned, duration=target,
                         nonstop={'available_duration': available, 'crossfades': fades})

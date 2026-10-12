@@ -69,6 +69,10 @@ def opening_tracks(songs):
 
 def allocate(songs, target, config, rng):
     """Store whole shuffled rounds, while the renderer consumes only the audible prefix."""
+    if config.get('duration_basis') == 'music':
+        from .musicled import choose_music
+        order = choose_music(songs, config, rng)
+        return order, sum(float(song['duration']) for song in order)
     target = float(target)
     if not math.isfinite(target) or target <= 0 or not songs:
         raise ValueError('文件夹没有可用音乐或目标时长无效')

@@ -131,7 +131,7 @@
   const batchesLayoutSignature = (batches) => JSON.stringify((batches || []).map(batch => [batch.id, batch.status, batch.error, batch.recovery_note, batch.folder_name, batch.output_folder, (batch.items || []).map(item => [item.id, item.include_track_titles, item.index, item.kind, item.status, item.error, item.output_name, item.duration, item.result, item.review, item.cleanup, item.thumbnails])]));
   const taskScrollAnchor = () => { const rows = $$('.task-item[data-task-key]'); const row = rows.find(node => { const rect = node.getBoundingClientRect(); return rect.bottom > 100 && rect.top < innerHeight; }); return { key: row?.dataset.taskKey, top: row?.getBoundingClientRect().top, y: window.scrollY }; };
   const restoreTaskScroll = anchor => { if (!anchor || currentView() !== 'tasks') return; const row = $$('.task-item[data-task-key]').find(node => node.dataset.taskKey === anchor.key); if (row) window.scrollBy(0, row.getBoundingClientRect().top - anchor.top); else window.scrollTo(0, anchor.y); };
-  const renderStep = item => ({video_segments:'正在分段渲染（完成片段可恢复）',video_recovery:'正在补救或替换损坏素材',assembling:'正在合成成片'})[item.render_stage] || '';
+  const renderStep = item => ({music_assembly:'正在完整拼接音乐',video_segments:'正在分段渲染（完成片段可恢复）',video_recovery:'正在补救或替换损坏素材',assembling:'正在合成成片'})[item.render_stage] || '';
   const updateTaskProgress = batches => { const rows = new Map($$('.task-item[data-task-key]').map(row => [row.dataset.taskKey, row])); batches.forEach(batch => (batch.items || []).forEach(item => { const label = rows.get(taskKey(batch.id, item.id))?.querySelector('.task-label'); if (!label) return; const pct = Number.isFinite(Number(item.progress)) ? ` · ${Math.round(Number(item.progress) * 100)}%` : ''; const next = `${item.output_name ? item.output_name + ' · ' : ''}${fmt(item.duration)}${pct}${item.status === 'running' && renderStep(item) ? ' · ' + renderStep(item) : ''}${item.status === 'running' && item.render_stage === 'silence_detection' ? ` · 正在进行音乐静音检测（${item.music_detection?.done || 0}/${item.music_detection?.total || 0} 首）` : ''}`; if (label.firstChild?.nodeType === Node.TEXT_NODE) label.firstChild.nodeValue = next; else label.textContent = next; })); };
   const hideFrameOverlay = () => { const overlay = $('#keyframe-overlay'); if (overlay) overlay.remove(); };
   const setTaskExpanded = (row, expanded) => {
@@ -208,7 +208,7 @@
       const updated = await api(`/api/batches/${encodeURIComponent(batch.id)}/items/${encodeURIComponent(item.id)}/replace`, {method:'POST', body:JSON.stringify({kind,index,replan_duration:replanDuration})});
       state.batches = state.batches.map(entry => entry.id === updated.id ? updated : entry);
       renderPlan(updated);
-      toast(kind === 'video' ? '视频替换完成；时长变化时已联动重排音乐。' : '替换完成，整批使用次数已更新。');
+      toast(kind === 'video' ? (batch.config?.duration_basis === 'music' ? '视频替换完成，音乐顺序和成片时长保持不变。' : '视频替换完成；时长变化时已联动重排音乐。') : '替换完成，整批使用次数已更新。');
     } catch (error) { button.disabled = false; toast(error.message, true); }
   }
   function appendVideoList(root, batch, item, counts) {
@@ -233,7 +233,7 @@
       const heading = document.createElement('h4'); heading.textContent = `音乐文件夹：${item.music_folder.split('/').pop()}`; heading.title = item.music_folder;
       const summary = document.createElement('p'); summary.className = 'field-help';
       const uses = (batch.items || []).filter(entry => entry.music_folder === item.music_folder).length;
-      summary.textContent = `本组使用 ${uses} 条任务 · ${item.music_unique_count || new Set(item.music.map(song => song.id)).size} 首不同歌曲 · 清单共 ${item.music.length} 次 · ${item.music_rounds || 1} 轮 · 音乐 ${fmt(item.music_total_duration)}（成片按目标时长截取）`;
+      summary.textContent = `本组使用 ${uses} 条任务 · ${item.music_unique_count || new Set(item.music.map(song => song.id)).size} 首不同歌曲 · 清单共 ${item.music.length} 次 · ${item.music_rounds || 1} 轮 · 音乐 ${fmt(item.music_total_duration)}${batch.config?.duration_basis === 'music' ? '（全部歌曲播放一遍，视频匹配音乐）' : '（成片按目标时长截取）'}`;
       track.append(heading, summary);
       if(item.music_order_warning){const warning=document.createElement('p');warning.className='field-help';warning.textContent=item.music_order_warning;track.append(warning);}
       if (batch.status === 'draft') {
@@ -265,7 +265,7 @@
       const badge = document.createElement('span'); badge.className = 'use-count'; badge.textContent = item.music_folder ? `本条播放 ${localCounts.get(song.id)} 次 · 本组播放 ${counts.songs.get(song.id) || 1} 次` : `本批使用 ${counts.songs.get(song.id) || 1} 次`;
       li.append(handle,name,badge);
       if (batch.status === 'draft') {
-        const replace = document.createElement('button'); replace.type = 'button'; replace.className = 'button replace-media'; replace.textContent = '随机替换这首歌'; if(item.music_folder && index<2 && !item.music_order_warning){replace.disabled=true;replace.title='前两首自动固定为01、02；可拖动或使用上下箭头手动调整';} replace.onclick = () => replaceMedia(batch,item,'music',index,replace); li.append(replace);
+        const replace = document.createElement('button'); replace.type = 'button'; replace.className = 'button replace-media'; replace.textContent = item.music_folder && batch.config?.duration_basis === 'music' ? '随机换位' : '随机替换这首歌'; if(item.music_folder && index<2 && !item.music_order_warning){replace.disabled=true;replace.title='前两首自动固定为01、02；可拖动或使用上下箭头手动调整';} replace.onclick = () => replaceMedia(batch,item,'music',index,replace); li.append(replace);
       }
       if (editable) {
         const controls = document.createElement('span'); controls.className = 'order-buttons';

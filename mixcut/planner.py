@@ -314,6 +314,9 @@ def annotate_batch(items):
 def plan(videos: list[dict[str, Any]], music: list[dict[str, Any]], config: dict[str, Any], *,
          allow_partial: bool = False, previous_items: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Build unique ordered music and video plans; does not render or mutate sources."""
+    if config.get('duration_basis') == 'music':
+        from . import musicled
+        return musicled.plan(videos, music, config, previous_items, allow_partial)
     count = int(config.get("count", 1))
     try:
         source_minutes = float(config.get('min_source_duration_minutes', 0))
