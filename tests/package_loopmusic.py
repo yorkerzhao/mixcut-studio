@@ -49,7 +49,7 @@ def main():
                     try:boot=api('/api/bootstrap');break
                     except OSError:time.sleep(.2)
                 else:raise AssertionError('Packaged server failed to start')
-                assert boot['version']=='1.8.0' and boot['api_protocol']==17
+                assert boot['version']=='1.8.1' and boot['api_protocol']==17
                 env=dict(os.environ,NODE_PATH=str(Path.home()/'.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules'),MIXCUT_TEST_URL=base,MIXCUT_LOOP_SET=str(parent),MIXCUT_LOOP_OUTPUT=str(root/'outputs'),MIXCUT_LOOP_SCREENSHOT='/tmp/mixcut170-page.png')
                 subprocess.run([str(Path.home()/'.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node'),'tests/ui_loopmusic.cjs'],env=env,check=True)
                 output=next((root/'outputs').rglob('成品视频.mp4'))

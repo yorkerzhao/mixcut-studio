@@ -33,6 +33,19 @@ class OpeningOrderTests(unittest.TestCase):
         self.assertIn('01、02',item['music_order_warning'])
         item={'music':music};foldermusic.describe(item);self.assertEqual('',item['music_order_warning'])
 
+    def test_trailing_numbers_preferred_and_full_folder_played_once(self):
+        music=songs(['New_Hindi_💙[3Ro180iBBcU]-去重 03.mp3',
+                     'New_Hindi_💙[3Ro180iBBcU]-去重 02.flac',
+                     'New_Hindi_💙[3Ro180iBBcU]-去重 01.m4a',
+                     '01 old prefix.mp3','02 old prefix.mp3','01 title-去重 04.mp3'])
+        for seed in range(10):
+            order,_=foldermusic.allocate(music,1,{'duration_basis':'music','music_mode':'folder'},random.Random(seed))
+            self.assertTrue(order[0]['path'].endswith('去重 01.m4a'))
+            self.assertTrue(order[1]['path'].endswith('去重 02.flac'))
+            self.assertEqual(len(music),len(order))
+            self.assertEqual({s['id'] for s in music},{s['id'] for s in order})
+        self.assertEqual([],foldermusic.opening_tracks(songs(['title 101.mp3','title 201.mp3','01 title 03.mp3'])))
+
     def test_two_song_and_single_song_folders_remain_usable(self):
         pair=songs(['02 B.mp3','01 A.mp3'])
         order,_=foldermusic.allocate(pair,55,{},random.Random(7));self.assertEqual(['01 A.mp3','02 B.mp3'],[s['id'] for s in order[:2]])

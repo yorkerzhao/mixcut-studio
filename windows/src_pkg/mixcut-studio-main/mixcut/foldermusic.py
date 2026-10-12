@@ -57,13 +57,25 @@ def shuffled_round(songs, rng, last_id=None):
 
 
 def opening_tracks(songs):
-    """Filename 01/02 anchors apply only to the first round, never manual edits."""
+    """Prefer trailing 01/02 before the extension; support legacy leading numbers."""
+    candidates = []
+    for song in songs:
+        path = str(song.get('path') or song.get('name', ''))
+        name = Path(path).stem
+        trailing = re.search(r'(?<!\d)(\d{2})\s*$', name)
+        leading = re.match(r'^\s*0([12])(?!\d)', name)
+        # A trailing number is authoritative, even when it is 03 or greater.
+        if trailing:
+            number, priority = int(trailing[1]), 0
+        elif leading:
+            number, priority = int(leading[1]), 1
+        else:
+            continue
+        if number in (1, 2):
+            candidates.append((priority, path.casefold(), number, song))
     anchors = {}
-    for song in sorted(songs, key=lambda entry: str(entry.get('path', entry.get('name', ''))).casefold()):
-        name = Path(song.get('path') or song.get('name', '')).stem
-        match = re.match(r'^\s*0([12])(?!\d)', name)
-        if match:
-            anchors.setdefault(int(match[1]), song)
+    for _, _, number, song in sorted(candidates, key=lambda entry: entry[:2]):
+        anchors.setdefault(number, song)
     return [anchors[number] for number in (1, 2) if number in anchors]
 
 
