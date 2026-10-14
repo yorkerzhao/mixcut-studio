@@ -331,6 +331,7 @@
     if (job.scan && job.status === 'completed' && signature !== state.scanSignature) {
       state.scanSignature = signature;
       state.scan = job.scan;
+      renderPlan(null);
       renderAssets();
       if (job.status === 'completed') renderErrors(job.scan.errors || []);
     }
@@ -354,14 +355,16 @@
   async function scan() {
     const video_dir = $('#video-dir').value.trim(), music_dir = $('#music-dir').value.trim();
     if (!video_dir || !music_dir) return toast('请先填写视频和音乐文件夹。', true);
-    const videoChanged = !state.libraryDirs || state.dirtyLibrary.has('video') || video_dir !== state.libraryDirs.video;
-    const musicChanged = !state.libraryDirs || state.dirtyLibrary.has('music') || music_dir !== state.libraryDirs.music;
-    const kind = videoChanged && !musicChanged ? 'video' : musicChanged && !videoChanged ? 'music' : 'both';
+    const kind = 'both';
+    state.scanRunning = true;
+    $('#scan-progress').textContent = '正在重新读取视频和音乐目录…';
+    state.dirtyLibrary.add('video'); state.dirtyLibrary.add('music');
+    $('#plan-btn').disabled = true;
     $('#scan-btn').disabled = true; renderErrors([]);
     try {
       const job = await api('/api/scan/start', {method:'POST', body:JSON.stringify({video_dir,music_dir,kind})});
       applyScanJob({...job, video_dir, music_dir});
-    } catch (error) { $('#scan-btn').disabled = false; toast(error.message === '接口不存在' ? '旧版后台仍在运行，请停止后台并重新打开 MixCut Studio。' : error.message, true); }
+    } catch (error) { state.scanRunning = false; $('#scan-btn').disabled = false; toast(error.message === '接口不存在' ? '旧版后台仍在运行，请停止后台并重新打开 MixCut Studio。' : error.message, true); }
   }
   async function createPlan() { let config; try { config = getConfig(); } catch (error) { toast(error.message, true); return; } const btn = $('#plan-btn'); btn.disabled = true; btn.textContent = '正在规划…'; try { const data = await api('/api/plan', { method: 'POST', body: JSON.stringify({ config }) }); const planned = data.batch || data; state.batches = [planned, ...state.batches.filter(batch => batch.id !== planned.id)]; renderPlan(planned); location.hash = 'plan'; toast('方案生成完成，请核对每条歌曲与视频区间。'); } catch (error) { renderPlan(null); $('#plan-message').textContent = `无法生成方案：${error.message}`; location.hash = 'plan'; toast(error.message, true); } finally { btn.disabled = false; btn.textContent = '生成方案'; } }
   async function batchAction(id, action) { try { const data = await api(`/api/batches/${encodeURIComponent(id)}/${action}`, { method: 'POST', body: '{}' }); if (action === 'start') renderPlan(null); else if (data.batch && state.batch?.id === id) renderPlan(data.batch); toast({start:'已加入渲染队列',pause:'将在执行中的成片完成后暂停',resume:'已继续队列',stop:'已停止队列',retry:'已安排重试'}[action] || '操作成功'); if (action === 'start') location.hash = 'tasks'; refreshBatches(); } catch (error) { toast(error.message, true); } }

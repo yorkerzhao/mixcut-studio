@@ -644,6 +644,11 @@ class Application:
                 raise ValueError('另一个素材路径也已更改，请同时刷新两个素材库')
         if not self.scan_lock.acquire(blocking=False):
             raise ValueError('已有素材扫描正在进行，请等待完成')
+        try:
+            self.store.put('library', dict(old, refresh_required=True))
+        except Exception:
+            self.scan_lock.release()
+            raise
         job = {'id': uuid.uuid4().hex[:12], 'status': 'discovering', 'kind': kind,
                'video_dir': str(video_dir), 'music_dir': str(music_dir),
                'totals': {}, 'processed': {'video': 0, 'music': 0},
@@ -738,6 +743,8 @@ class Application:
             if not 0 <= config[field] <= 2:
                 raise ValueError('音量须在 0～2 之间')
         library_record = self.store.get('library', {})
+        if library_record.get('refresh_required'):
+            raise ValueError('素材库刷新尚未成功，请重新扫描素材后再生成方案')
         library = self.filter_rejected_scan(library_record.get('scan', {}))
         if not library.get('videos') or not library.get('music'):
             raise ValueError('请先扫描视频和音乐素材')
