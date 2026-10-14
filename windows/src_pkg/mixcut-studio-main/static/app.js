@@ -368,7 +368,7 @@
   }
   async function createPlan() { let config; try { config = getConfig(); } catch (error) { toast(error.message, true); return; } const btn = $('#plan-btn'); btn.disabled = true; btn.textContent = '正在规划…'; try { const data = await api('/api/plan', { method: 'POST', body: JSON.stringify({ config }) }); const planned = data.batch || data; state.batches = [planned, ...state.batches.filter(batch => batch.id !== planned.id)]; renderPlan(planned); location.hash = 'plan'; toast('方案生成完成，请核对每条歌曲与视频区间。'); } catch (error) { renderPlan(null); $('#plan-message').textContent = `无法生成方案：${error.message}`; location.hash = 'plan'; toast(error.message, true); } finally { btn.disabled = false; btn.textContent = '生成方案'; } }
   async function batchAction(id, action) { try { const data = await api(`/api/batches/${encodeURIComponent(id)}/${action}`, { method: 'POST', body: '{}' }); if (action === 'start') renderPlan(null); else if (data.batch && state.batch?.id === id) renderPlan(data.batch); toast({start:'已加入渲染队列',pause:'将在执行中的成片完成后暂停',resume:'已继续队列',stop:'已停止队列',retry:'已安排重试'}[action] || '操作成功'); if (action === 'start') location.hash = 'tasks'; refreshBatches(); } catch (error) { toast(error.message, true); } }
-  async function itemAction(batchId, itemId, action) { try { const result = await api(`/api/batches/${encodeURIComponent(batchId)}/items/${encodeURIComponent(itemId)}/${action}`, { method:'POST', body:'{}' }); if (action === 'delete' && result.updated_batches) applyDeletedBatches(result.updated_batches); else { state.batchSignature=''; await refreshBatches(); } toast(result.preview_cleanup_errors?.length ? `任务已删除，但部分缩略图未能清理：${result.preview_cleanup_errors[0]}` : {start:'已重新开始该条任务',stop:'已终止该条任务',delete:'已删除任务；所有文件保留不变'}[action], !!result.preview_cleanup_errors?.length); } catch (error) { toast(error.message,true); } }
+  async function itemAction(batchId, itemId, action) { try { const result = await api(`/api/batches/${encodeURIComponent(batchId)}/items/${encodeURIComponent(itemId)}/${action}`, { method:'POST', body:'{}' }); if (action === 'delete' && result.updated_batches) applyDeletedBatches(result.updated_batches); else { state.batchSignature=''; await refreshBatches(); } toast(result.preview_cleanup_errors?.length ? `任务已删除，但部分任务目录或缓存尚未清理，将稍后重试：${result.preview_cleanup_errors[0]}` : {start:'已重新开始该条任务',stop:'已终止该条任务',delete:'已删除任务；未审核任务目录已回收或等待停止后回收；已审核作品和原素材保留'}[action], !!result.preview_cleanup_errors?.length); } catch (error) { toast(error.message,true); } }
   async function allBatches(action) { const candidates=state.batches.filter(batch=>action==='pause'?['queued','running'].includes(batch.status):(action==='stop'?['queued','running','pausing','paused'].includes(batch.status):['paused','stopped','draft'].includes(batch.status))); for(const batch of candidates){const next=action==='pause'?'pause':(action==='stop'?'stop':(batch.status==='paused'?'resume':'start'));try{await api(`/api/batches/${encodeURIComponent(batch.id)}/${next}`,{method:'POST',body:'{}'});}catch(error){toast(`批次 ${batch.id}：${error.message}`,true);}} state.batchSignature='';await refreshBatches(); }
   function applyDeletedBatches(updatedBatches) {
     const byId = new Map(state.batches.map(batch => [batch.id, batch]));
@@ -421,8 +421,8 @@
       selections.forEach(entry => entry.item_ids.forEach(id => selectedTasks.delete(taskKey(entry.batch_id,id))));
       if (result.updated_batches) applyDeletedBatches(result.updated_batches);
       else { state.batchSignature=''; await refreshBatches(); if (state.batch) renderPlan(state.batches.find(batch => batch.id === state.batch.id) || null); }
-      if (scope === 'plan') $('#plan-message').textContent = `已删除 ${result.deleted_items} 条任务记录，当前方案剩余 ${state.batch?.items?.length || 0} 条。所有文件保留不变。`;
-      toast(result.preview_cleanup_errors?.length ? `任务已删除，但部分缩略图未能清理：${result.preview_cleanup_errors[0]}` : `已删除 ${result.deleted_items} 条任务记录；所有文件保留不变。`, !!result.preview_cleanup_errors?.length);
+      if (scope === 'plan') $('#plan-message').textContent = `已删除 ${result.deleted_items} 条任务记录，当前方案剩余 ${state.batch?.items?.length || 0} 条。未审核任务目录已回收或等待停止后回收；已审核作品和原素材保留。`;
+      toast(result.preview_cleanup_errors?.length ? `任务已删除，但部分任务目录或缓存尚未清理，将稍后重试：${result.preview_cleanup_errors[0]}` : `已删除 ${result.deleted_items} 条任务记录；未审核任务目录已回收或等待停止后回收；已审核作品和原素材保留。`, !!result.preview_cleanup_errors?.length);
     } catch(error) { toast(error.message,true); }
     finally { button.disabled = false; updateSelectionButtons(); }
   }
@@ -436,7 +436,7 @@
     try {
       const result=await api('/api/tasks/clear',{method:'POST',body:'{}'});
       selectedTasks.clear();applyDeletedBatches(result.updated_batches);renderPlan(null);
-      toast(result.preview_cleanup_errors?.length ? `任务已清除，但部分缩略图未能清理：${result.preview_cleanup_errors[0]}` : `已清除 ${result.deleted_items} 条任务记录；所有文件保留不变。`, !!result.preview_cleanup_errors?.length);
+      toast(result.preview_cleanup_errors?.length ? `任务已清除，但部分任务目录或缓存尚未清理，将稍后重试：${result.preview_cleanup_errors[0]}` : `已清除 ${result.deleted_items} 条任务记录；未审核任务目录已回收或等待停止后回收；已审核作品和原素材保留。`, !!result.preview_cleanup_errors?.length);
     } catch(error){toast(error.message,true);}
   }
   async function downloadDeletionRecords() {

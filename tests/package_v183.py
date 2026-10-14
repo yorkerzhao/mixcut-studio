@@ -24,7 +24,7 @@ with tempfile.TemporaryDirectory(prefix='mixcut183-') as tmp:
    for _ in range(100):
     try:boot=api('/api/bootstrap');break
     except OSError:time.sleep(.1)
-   assert boot['version']=='1.8.3'
+   assert boot['version']=='1.8.4'
    runtime=Path.home()/'.cache/codex-runtimes/codex-primary-runtime/dependencies/node'
    subprocess.run([str(runtime/'bin/node'),'tests/ui_v183.cjs'],env=dict(os.environ,NODE_PATH=str(runtime/'node_modules'),MIXCUT_TEST_URL=base,MIXCUT_SCAN_FIXTURE=str(root)),check=True)
    batch=api('/api/plan',{'config':{'duration_basis':'music','music_mode':'fixed','count':1,'output_dir':str(root/'output')}})

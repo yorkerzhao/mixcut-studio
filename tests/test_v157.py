@@ -86,10 +86,11 @@ class RetainedReviewTests(unittest.TestCase):
         self.video.with_suffix('.txt').write_text('document')
         self.item.update(segments=[{'asset_id':'raw','path':str(source),'start':0,'duration':3}],music=[{'path':str(music)}])
         self.app.store.put('batch:abc123',self.batch)
-        snapshot={p:p.read_bytes() for p in [source,music,self.video,self.video.with_suffix('.txt')]}
+        snapshot={p:p.read_bytes() for p in [source,music]}
         result=self.app.forget_all_items()
         self.assertEqual(1,result['deleted_items'])
         self.assertEqual(snapshot,{p:p.read_bytes() for p in snapshot})
+        self.assertFalse(self.folder.exists())
 
     def test_running_delete_is_immediate_and_only_requests_cancellation(self):
         self.item['status']='running';self.batch['status']='running'

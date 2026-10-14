@@ -5,6 +5,6 @@ const {chromium}=require('playwright');const assert=require('assert');
  const task=page.locator(`[data-task-key="${process.env.MIXCUT_TASK_KEY}"]`);
  await task.locator('.item-controls').getByRole('button',{name:'删除任务',exact:true}).click();
  await task.waitFor({state:'detached'});
- assert.ok((await page.locator('#toast').textContent()).includes('所有文件保留不变'));assert.deepEqual(errors,[]);
+ assert.ok((await page.locator('#toast').textContent()).includes('已审核作品和原素材保留'));assert.deepEqual(errors,[]);
  console.log('V1.6.0 packaged browser: delete task button removes row and reports files retained; no page errors');
 }finally{await browser.close();}})().catch(e=>{console.error(e);process.exit(1)});

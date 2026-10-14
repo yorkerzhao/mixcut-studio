@@ -1241,6 +1241,11 @@ class Application:
                             retained.append(item)
                             continue
                         preview_cleanup.append((dict(batch), dict(item)))
+                        if preserve_files and item.get('output_bundle') and item.get('review', {}).get('status') != 'approved':
+                            receipt = {'batch': {'id':batch_id, 'config':batch['config']},
+                                       'item': {key:item[key] for key in ('id','output_bundle','output_path','thumbnails','result') if key in item}}
+                            conn.execute('INSERT OR REPLACE INTO records VALUES (?,?)',
+                                         ('forgotten-output:' + batch_id + ':' + str(item['id']), json.dumps(receipt,ensure_ascii=False)))
                         if preserve_files:
                             preserved_sources.update(str(Path(part['path']).resolve()) for part in
                                 item.get('segments', []) + item.get('checkpoint_segments', [])
@@ -1287,8 +1292,56 @@ class Application:
                 self.remove_task_work(batch['id'], item['id'])
             except OSError as exc:
                 cleanup_errors.append(str(exc))
+        if preserve_files:
+            cleanup_errors.extend(self.cleanup_forgotten_outputs())
         self.wake.set()
         return {'ok': True, 'deleted_items': removed, 'updated_batches': changed, 'preview_cleanup_errors': cleanup_errors}
+
+    def cleanup_forgotten_outputs(self):
+        """Recycle dedicated task bundles after writers stop; retain durable retry receipts."""
+        errors = []
+        if not self.review_lock.acquire(blocking=False):
+            return errors
+        try:
+            for record in self.store.records('forgotten-output:'):
+                batch, item = record['batch'], record['item']
+                key = (batch['id'], str(item['id']))
+                live_batch = self.store.get('batch:' + batch['id'], {})
+                live = next((i for i in live_batch.get('items', []) if str(i['id']) == key[1]), {})
+                if live.get('review', {}).get('status') == 'approved':
+                    self.store.delete('forgotten-output:' + batch['id'] + ':' + str(item['id']))
+                    continue
+                with self.cache_lock:
+                    writing = key in self.cache_users
+                with self.preview_lock:
+                    previewing = key in self.preview_jobs
+                if writing or previewing or live.get('status') in {'running', 'validating'}:
+                    continue
+                try:
+                    folder = Path(item['output_bundle'])
+                    shared = any(str(other.get('output_bundle','')) == str(folder) and
+                                 (other_batch['id'],str(other['id'])) != key and not other.get('dismissed')
+                                 for other_batch in self.store.batches() for other in other_batch.get('items',[]))
+                    if shared:
+                        self.store.delete('forgotten-output:' + batch['id'] + ':' + str(item['id']))
+                        continue
+                    if folder.exists():
+                        root = Path(batch['config']['output_dir']).resolve()
+                        if folder.is_symlink() or folder.resolve() == root or not folder.resolve().is_relative_to(root) or Path(item['output_path']).parent != folder:
+                            raise ValueError('任务目录与成品路径不一致，目录已保留')
+                        # Empty reservations need no trash operation and immediately release their number.
+                        try:
+                            folder.rmdir()
+                        except OSError:
+                            self.trash_task_output(batch, item)
+                    self.delete_previews(batch, item)
+                    self.remove_task_work(batch['id'], item['id'])
+                    self.store.delete('forgotten-output:' + batch['id'] + ':' + str(item['id']))
+                except (OSError, ValueError) as exc:
+                    errors.append(str(exc))
+        finally:
+            self.review_lock.release()
+        return errors
 
     def forget_all_items(self):
         selections = [{'batch_id': batch['id'], 'item_ids': [item['id'] for item in batch['items']]}
@@ -1297,6 +1350,7 @@ class Application:
 
     def prune_forgotten_items(self):
         """Drop hidden rows after their worker/reviewer has stopped using their indexes."""
+        self.cleanup_forgotten_outputs()
         if not self.review_lock.acquire(blocking=False):
             return
         try:
@@ -1330,6 +1384,7 @@ class Application:
                         conn.execute('DELETE FROM records WHERE id=?', ('batch:' + batch['id'],))
         finally:
             self.review_lock.release()
+        self.cleanup_forgotten_outputs()
 
     def delete_items(self, selections, confirmation, expected_count=None):
         """Remove selected task records, retaining a durable snapshot of cleanup state."""
@@ -2411,7 +2466,7 @@ class Application:
             move_to_trash(path)
 
     def forget_items(self, selections, *, clear_history=False):
-        """Remove records immediately; never recycle completed output or source files."""
+        """Remove records and recycle dedicated output folders; preserve original sources."""
         return self._forget_records(selections, clear_history=clear_history, preserve_files=True)
 
     def approve(self, body):

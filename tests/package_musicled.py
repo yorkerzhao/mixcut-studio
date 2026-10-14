@@ -30,7 +30,7 @@ def main():
    for _ in range(100):
     try:boot=api('/api/bootstrap');break
     except OSError:time.sleep(.1)
-   assert boot['version']=='1.8.3' and boot['api_protocol']==17
+   assert boot['version']=='1.8.4' and boot['api_protocol']==17
    batches=[]
    for mode in ['folder','pool','fixed']:
     config={'duration_basis':'music','music_mode':mode,'count':1,'min_duration':4,'max_duration':4,'mode':'single','allow_overlap':True,
@@ -98,7 +98,7 @@ def main():
    assert not v2.exists(), 'approval must recycle original'
    assert Path(item['output_path']).is_file(), 'approval retains export'
    assert all(Path(song['path']).is_file() for song in songs),'music must remain'
-   print('V1.8.3 packaged acceptance: four music-led real renders, short/long video coverage, full soundtrack decode, dated numbered bundles, same inode retained on approval, document toggle, record-only deletion and native source recycle on approval and rejection; original music preserved')
+   print('V1.8.4 packaged acceptance: four music-led real renders, short/long video coverage, full soundtrack decode, dated numbered bundles, same inode retained on approval, document toggle, record-only deletion and native source recycle on approval and rejection; original music preserved')
   finally:
    try:api('/api/shutdown',{})
    except Exception:pass
