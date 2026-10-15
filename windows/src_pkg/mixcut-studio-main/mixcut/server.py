@@ -1195,11 +1195,35 @@ class Application:
         self.wake.set()
         return result
 
-    @staticmethod
-    def _visible_batch(batch):
+    def approved_record_ready(self, batch, item):
+        """Retire only retained approved works whose cleanup is actually finished."""
+        if item.get('review', {}).get('status') != 'approved' or not item.get('review', {}).get('retained'):
+            return False
+        cleanup = item.get('cleanup', {})
+        if not cleanup.get('output_retained') or not cleanup.get('temporary_segments_deleted') or cleanup.get('output_error'):
+            return False
+        if item.get('segments') and not cleanup.get('original_recordings_deleted'):
+            return False
+        if batch.get('sticker_origin') and not cleanup.get('origin_output_deleted') and not cleanup.get('origin_status'):
+            return False
+        key = (batch['id'], str(item['id']))
+        # Membership reads are atomic; approved tasks cannot acquire a new render slot.
+        # Do not acquire cache/preview locks here: callers may hold the store lock.
+        if key in self.cache_users or (self.store.directory/'work'/batch['id']/str(item['id'])).exists():
+            return False
+        ids = {seg.get('asset_id') for seg in item.get('segments', [])}
+        if ids & set(self.store.get('cache-cleanup-pending', [])) or key in self.preview_jobs:
+            return False
+        version = item.get('thumbnails', {}).get('version')
+        if version and (self.keyframes.root/version).exists():
+            return False
+        return True
+
+    def _visible_batch(self, batch):
         if batch is None:
             return None
         items = [item for item in batch.get('items', []) if not item.get('dismissed')
+                 and not self.approved_record_ready(batch, item)
                  and not (item.get('review', {}).get('status') in {'approved', 'superseded'}
                           and item.get('cleanup', {}).get('output_deleted'))]
         return {**batch, 'items': items} if items else None
@@ -1361,6 +1385,9 @@ class Application:
                 dependents = {(origin.get('batch_id'), origin.get('item_id')) for batch in batches
                               if (origin := batch.get('sticker_origin')) and batch.get('items')}
                 for batch in batches:
+                    run_id = batch.get('scheduled_run_id')
+                    if run_id and self.store.get('scheduled-run:' + run_id, {}).get('status') in {'waiting', 'running'}:
+                        continue  # The scheduler still counts successful rows to avoid overproduction.
                     if batch['status'] in {'running', 'queued', 'pausing', 'stopping'} or batch['id'] in self.executing_batches or batch['id'] in reviewing:
                         continue
                     retained = []
@@ -1371,6 +1398,7 @@ class Application:
                                    and (not item.get('segments') or cleanup.get('original_recordings_deleted'))
                                    and (not batch.get('sticker_origin') or cleanup.get('origin_output_deleted'))
                                    and (batch['id'], item['id']) not in dependents)
+                        settled = settled or (self.approved_record_ready(batch, item) and (batch['id'], item['id']) not in dependents)
                         if not item.get('dismissed') and not settled:
                             retained.append(item)
                     if len(retained) == len(batch['items']):
