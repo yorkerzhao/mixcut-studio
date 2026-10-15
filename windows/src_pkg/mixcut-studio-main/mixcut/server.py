@@ -620,6 +620,69 @@ class Application:
             self.store.put('library', {'video_dir': str(video_dir), 'music_dir': str(music_dir), 'scan': self.filter_rejected_scan(result)})
             return self.filter_rejected_scan(result)
 
+    def clear_scan_errors(self):
+        """Recycle only unchanged video failures from the latest completed inventory."""
+        from . import media
+        if not self.scan_lock.acquire(blocking=False):
+            raise ValueError('素材扫描或清理正在进行，请等待完成')
+        try:
+            library = self.store.get('library', {})
+            if library.get('refresh_required'):
+                raise ValueError('请先完成一次素材扫描，再清除异常文件')
+            scan = library.get('scan', {})
+            root = Path(library.get('video_dir', '')).resolve()
+            music_root = Path(library.get('music_dir', '')).resolve()
+            referenced = set()
+            for batch in self.store.batches():
+                for item in batch.get('items', []):
+                    for part in item.get('segments', []) + item.get('checkpoint_segments', []) + item.get('video_assets', []):
+                        if part.get('path'):
+                            referenced.add(str(Path(part['path']).resolve()))
+            removed, skipped, failed, remaining = [], [], [], []
+            for error in scan.get('errors', []):
+                if not isinstance(error, dict) or error.get('kind') != 'video' or not error.get('snapshot'):
+                    remaining.append(error)
+                    continue
+                path = Path(error['path'])
+                try:
+                    canonical = path.resolve()
+                    if (path.is_symlink() or not canonical.is_relative_to(root)
+                            or canonical.is_relative_to(music_root) or not path.is_file()):
+                        raise ValueError('文件已不存在或不属于可清理的视频目录')
+                    def unchanged():
+                        st = path.stat()
+                        return error['snapshot'] == {'size': st.st_size, 'mtime_ns': st.st_mtime_ns,
+                                                     'dev': st.st_dev, 'ino': st.st_ino}
+                    if not unchanged():
+                        raise ValueError('文件已变化，可能仍在录制，请重新扫描')
+                    if str(canonical) in referenced:
+                        raise ValueError('已有任务引用该视频，请先处理相关任务')
+                    try:
+                        media._asset(path, 'video', quick_music=True)
+                    except ValueError:
+                        pass  # Confirmed invalid metadata/streams, not a disk access failure.
+                    else:
+                        raise RuntimeError('文件现在已可正常识别，请重新扫描')
+                    if not unchanged():
+                        raise ValueError('检查期间文件发生变化，已保留')
+                    move_to_trash(path)
+                    removed.append(str(path))
+                    logging.info('scan-error recycled: %s', path)
+                except (ValueError, RuntimeError) as exc:
+                    skipped.append({'path': str(path), 'reason': str(exc)})
+                    remaining.append(error)
+                except Exception as exc:
+                    failed.append({'path': str(path), 'reason': str(exc)})
+                    remaining.append(error)
+            scan = dict(scan, errors=remaining)
+            self.store.put('library', dict(library, scan=scan))
+            with self.scan_state_lock:
+                if self.scan_job and self.scan_job.get('status') == 'completed':
+                    self.scan_job['scan'] = copy.deepcopy(scan)
+            return {'scan': scan, 'removed': removed, 'skipped': skipped, 'failed': failed}
+        finally:
+            self.scan_lock.release()
+
     def scan_status(self, compact=False):
         with self.scan_state_lock:
             if compact and self.scan_job and self.scan_job['status'] in {'discovering', 'analyzing'}:
@@ -2803,6 +2866,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json_response(self.app.create_sticker_variant(body))
                 if path == '/api/scan':
                     return self.json_response(self.app.scan(body))
+                if path == '/api/scan/errors/clear':
+                    return self.json_response(self.app.clear_scan_errors())
                 if path == '/api/scan/start':
                     return self.json_response(self.app.start_scan(body))
                 if path == '/api/schedules':

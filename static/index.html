@@ -37,6 +37,8 @@
             <label hidden>旧版审核目录（不再使用）<span class="path-control"><input id="review-dir" name="review_dir" placeholder="/Users/…/审核通过"><button class="button folder-picker" data-kind="review" type="button">选择文件夹</button></span></label>
             <p class="field-help">路径由本机服务验证；视频或音乐目录变更后请重新扫描。导出会按 <strong>YYYY-MM-DD_001</strong> 建立当日递增子文件夹。</p>
           </form>
+          <button id="clear-scan-errors" class="button" hidden>一键清除异常视频（移入废纸篓）</button>
+          <div id="scan-cleanup-result" class="notice" hidden></div>
           <div id="scan-errors" class="error-list" hidden></div>
           <div class="asset-summary" id="asset-summary"><span>尚未扫描</span></div>
           <div class="library-grid">
