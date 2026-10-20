@@ -132,15 +132,21 @@ def plan(videos, music, config, previous_items=None, allow_partial=False):
     if config.get('music_mode') == 'folder' and not grouped: raise ValueError('音乐根目录下没有有效音乐子文件夹')
     rng = random.Random(config.get('seed', 0))
     mu, vu, fu, occupied = defaultdict(int), defaultdict(int), defaultdict(int), defaultdict(list)
+    local_folders = defaultdict(int)
+    history = config.get('_music_folder_history')
+    if history is not None:
+        fu.update({path: value['completed'] + value['pending'] for path, value in history.items()})
     for item in previous_items or []:
         for s in item['music']: mu[s['id']] += 1
         for s in item['segments']:
             vu[s['asset_id']] += 1
             occupied[s['asset_id']].append((s['start'],s['start']+s['duration']))
-        if item.get('music_folder'): fu[item['music_folder']] += 1
+        if item.get('music_folder'):
+            local_folders[item['music_folder']] += 1
+            if history is None: fu[item['music_folder']] += 1
     items, seen, warnings = [], {planner.video_plan_key(i['segments'], config.get('fps',30)) for i in previous_items or []}, []
     for index in range(count):
-        folder = foldermusic.choose_folder(grouped, fu, rng) if grouped else None
+        folder = foldermusic.choose_folder(grouped, fu, rng, history=history, local_usage=local_folders) if grouped else None
         order = choose_music(grouped[folder] if folder else music, config, rng, mu)
         total = sum(float(s['duration']) for s in order)
         for attempt in range(24):
@@ -156,6 +162,7 @@ def plan(videos, music, config, previous_items=None, allow_partial=False):
         if folder:
             item.update(music_folder=folder,music_folder_song_count=len(order))
             fu[folder] += 1
+            local_folders[folder] += 1
         items.append(item)
         for song in order: mu[song['id']] += 1
         for seg in segments:

@@ -397,13 +397,17 @@ def plan(videos: list[dict[str, Any]], music: list[dict[str, Any]], config: dict
     for old in previous_items:
         for song in old.get('music', []):
             batch_music_usage[song['id']] += 1
-    folder_usage = defaultdict(int)
+    local_folders = defaultdict(int)
+    history = config.get('_music_folder_history')
+    folder_usage = defaultdict(int, {path: value['completed'] + value['pending'] for path, value in (history or {}).items()})
     for old in previous_items:
-        if old.get('music_folder'): folder_usage[old['music_folder']] += 1
+        if old.get('music_folder'):
+            local_folders[old['music_folder']] += 1
+            if history is None: folder_usage[old['music_folder']] += 1
     if config.get('music_mode', 'pool') in {'pool', 'folder'}:
         orders = [None] * count
     for order in orders:
-        folder = foldermusic.choose_folder(grouped, folder_usage, rng) if grouped else None
+        folder = foldermusic.choose_folder(grouped, folder_usage, rng, history=history, local_usage=local_folders) if grouped else None
         if order is None:
             lower = float(config.get('min_duration', min(float(song['duration']) for song in music)))
             upper = float(config.get('max_duration', lower))
@@ -443,6 +447,7 @@ def plan(videos: list[dict[str, Any]], music: list[dict[str, Any]], config: dict
             items[-1].update(music_folder=folder, music_folder_song_count=len(grouped[folder]))
             foldermusic.describe(items[-1])
             folder_usage[folder] += 1
+            local_folders[folder] += 1
         for song in order:
             batch_music_usage[song['id']] += 1
         for segment in segments:

@@ -242,12 +242,13 @@
       const heading = document.createElement('h4'); heading.textContent = `音乐文件夹：${item.music_folder.split('/').pop()}`; heading.title = item.music_folder;
       const summary = document.createElement('p'); summary.className = 'field-help';
       const uses = (batch.items || []).filter(entry => entry.music_folder === item.music_folder).length;
-      summary.textContent = `本组使用 ${uses} 条任务 · ${item.music_unique_count || new Set(item.music.map(song => song.id)).size} 首不同歌曲 · 清单共 ${item.music.length} 次 · ${item.music_rounds || 1} 轮 · 音乐 ${fmt(item.music_total_duration)}${batch.config?.duration_basis === 'music' ? '（全部歌曲播放一遍，视频匹配音乐）' : '（成片按目标时长截取）'}`;
+      const history = (batch.music_folder_catalog || []).find(folder => folder.path === item.music_folder)?.historical_usage;
+      summary.textContent = `${history ? `规划时历史成功 ${history.completed} 次 · 已有待制作 ${history.pending} 条 · ` : ''}本组使用 ${uses} 条任务 · ${item.music_unique_count || new Set(item.music.map(song => song.id)).size} 首不同歌曲 · 清单共 ${item.music.length} 次 · ${item.music_rounds || 1} 轮 · 音乐 ${fmt(item.music_total_duration)}${batch.config?.duration_basis === 'music' ? '（全部歌曲播放一遍，视频匹配音乐）' : '（成片按目标时长截取）'}`;
       track.append(heading, summary);
       if(item.music_order_warning){const warning=document.createElement('p');warning.className='field-help';warning.textContent=item.music_order_warning;track.append(warning);}
       if (batch.status === 'draft') {
         const select = document.createElement('select'); select.className = 'music-folder-select'; select.setAttribute('aria-label', '选择音乐文件夹');
-        (batch.music_folder_catalog || []).forEach(folder => { const count = (batch.items || []).filter(entry => entry.music_folder === folder.path).length; select.append(new Option(`${folder.name} · ${folder.song_count} 首 · 本组 ${count} 次`, folder.path)); });
+        (batch.music_folder_catalog || []).forEach(folder => { const count = (batch.items || []).filter(entry => entry.music_folder === folder.path).length; select.append(new Option(`${folder.name} · ${folder.song_count} 首 · 历史成功 ${folder.historical_usage?.completed || 0} 次 · 本组 ${count} 次`, folder.path)); });
         select.value = item.music_folder; select.addEventListener('change', () => changeMusicFolder(batch, item, {folder:select.value}, select));
         const random = document.createElement('button'); random.type = 'button'; random.className = 'button'; random.textContent = '随机换文件夹'; random.onclick = () => changeMusicFolder(batch, item, {random:true}, random);
         const shuffle = document.createElement('button'); shuffle.type = 'button'; shuffle.className = 'button'; shuffle.textContent = '重新排列音乐';

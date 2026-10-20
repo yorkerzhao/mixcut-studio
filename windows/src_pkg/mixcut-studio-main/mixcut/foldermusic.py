@@ -38,12 +38,18 @@ def catalog(grouped):
             for path, songs in sorted(grouped.items())]
 
 
-def choose_folder(grouped, usage, rng, exclude=None):
+def choose_folder(grouped, usage, rng, exclude=None, *, history=None, local_usage=None):
     candidates = [path for path in grouped if path != exclude]
     if not candidates:
         raise ValueError('没有其他可用音乐文件夹')
+    if local_usage is not None:
+        local_least = min(local_usage.get(path, 0) for path in candidates)
+        candidates = [path for path in candidates if local_usage.get(path, 0) == local_least]
     least = min(usage.get(path, 0) for path in candidates)
-    return rng.choice([path for path in candidates if usage.get(path, 0) == least])
+    candidates = [path for path in candidates if usage.get(path, 0) == least]
+    history = history or {}
+    oldest = min(history.get(path, {}).get('last_used', 0) for path in candidates)
+    return rng.choice([path for path in candidates if history.get(path, {}).get('last_used', 0) == oldest])
 
 
 def shuffled_round(songs, rng, last_id=None):

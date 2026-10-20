@@ -386,25 +386,27 @@ class Scheduler:
                     config.setdefault('seed', random.SystemRandom().randrange(2**63))
                     config['source_video_dir'] = schedule['video_dir']
                     config['music_root'] = schedule['music_dir']
-                result = planner.plan(scan['videos'], scan['music'], config, allow_partial=True, previous_items=previous)
-                with self.lock:
-                    run = self.active()
-                    if self.app.closing.is_set() or not run or run['id'] != run_id or run['status'] != 'waiting':
-                        return
-                    run['inventory_signature'] = signature
-                    run['last_error'] = '; '.join(str(e.get('error', e) if isinstance(e, dict) else e) for e in scan.get('errors', [])) or None
-                    if not result['items']:
-                        run['reason'] = '; '.join(result.get('warnings', [])) or '素材不足，等待下次检查'
+                with self.app.music_allocation_lock:
+                    config['_music_folder_history'] = self.store.folder_usage() if config.get('music_mode') == 'folder' else {}
+                    result = planner.plan(scan['videos'], scan['music'], config, allow_partial=True, previous_items=previous)
+                    with self.lock:
+                        run = self.active()
+                        if self.app.closing.is_set() or not run or run['id'] != run_id or run['status'] != 'waiting':
+                            return
+                        run['inventory_signature'] = signature
+                        run['last_error'] = '; '.join(str(e.get('error', e) if isinstance(e, dict) else e) for e in scan.get('errors', [])) or None
+                        if not result['items']:
+                            run['reason'] = '; '.join(result.get('warnings', [])) or '素材不足，等待下次检查'
+                            self._put_run(run)
+                            return
+                        config['count'] = len(result['items'])
+                        batch = self.app.make_batch(config, result, scan['videos'] + scan['music'],
+                                                    music_root=schedule['music_dir'], scheduled_run_id=run_id,
+                                                    schedule_name=run['name'], index_offset=run['completed_count'])
+                        run['batch_ids'].append(batch['id'])
+                        run.update(status='running', reason=f'本次可生成{len(result["items"])}条，完成后继续检查')
                         self._put_run(run)
-                        return
-                    config['count'] = len(result['items'])
-                    batch = self.app.make_batch(config, result, scan['videos'] + scan['music'],
-                                                music_root=schedule['music_dir'], scheduled_run_id=run_id,
-                                                schedule_name=run['name'], index_offset=run['completed_count'])
-                    run['batch_ids'].append(batch['id'])
-                    run.update(status='running', reason=f'本次可生成{len(result["items"])}条，完成后继续检查')
-                    self._put_run(run)
-                    self.app.action(batch['id'], 'start')
+                        self.app.action(batch['id'], 'start')
         except Exception as exc:
             with self.lock:
                 run = self.active()

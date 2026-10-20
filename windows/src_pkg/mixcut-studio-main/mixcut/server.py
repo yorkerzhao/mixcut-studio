@@ -50,6 +50,12 @@ class Store:
         self.lock = threading.RLock()
         with self.connection() as conn:
             conn.execute('CREATE TABLE IF NOT EXISTS records (id TEXT PRIMARY KEY, body TEXT NOT NULL)')
+            from . import folderusage
+            folderusage.initialize(conn)
+            for key, body in conn.execute("SELECT id,body FROM records WHERE id LIKE 'batch:%'").fetchall():
+                batch = json.loads(body)
+                folderusage.record_successes(conn, batch, migration=True)
+                conn.execute('UPDATE records SET body=? WHERE id=?', (json.dumps(batch, ensure_ascii=False), key))
 
     @contextmanager
     def connection(self):
@@ -65,8 +71,16 @@ class Store:
             row = conn.execute('SELECT body FROM records WHERE id=?', (key,)).fetchone()
             return json.loads(row[0]) if row else default
 
+    def folder_usage(self, exclude_task=None):
+        from . import folderusage
+        with self.lock, self.connection() as conn:
+            return folderusage.snapshot(conn, self.batches(), exclude_task)
+
     def put(self, key, value):
         with self.lock, self.connection() as conn:
+            if key.startswith('batch:'):
+                from . import folderusage
+                folderusage.record_successes(conn, value)
             conn.execute('INSERT OR REPLACE INTO records VALUES (?,?)',
                          (key, json.dumps(value, ensure_ascii=False)))
 
@@ -100,6 +114,7 @@ class Application:
         # Preserve the process version even if an installer replaces VERSION on disk.
         self.running_version = app_version()
         self.store = Store(state_dir)
+        self.music_allocation_lock = threading.RLock()
         from .nonstop import MusicEdges
         self.music_edges = MusicEdges(self.store)
         self.closing = threading.Event()
@@ -766,6 +781,10 @@ class Application:
         return self.scan_status()
 
     def create_plan(self, body):
+        with self.music_allocation_lock:
+            return self._create_plan(body)
+
+    def _create_plan(self, body):
         from . import media, planner
         with self.scan_state_lock:
             if self.scan_job and self.scan_job['status'] in {'discovering', 'analyzing'}:
@@ -819,6 +838,7 @@ class Application:
         config['source_video_dir'] = self.store.get('library', {}).get('video_dir')
         config['music_root'] = library_record.get('music_dir')
         config.setdefault('seed', random.SystemRandom().randrange(2**63))
+        config['_music_folder_history'] = self.store.folder_usage() if config.get('music_mode') == 'folder' else {}
         result = planner.plan(library['videos'], library['music'], config)
         if len(result['items']) != count:
             raise ValueError(f"只找到 {len(result['items'])}/{count} 条方案，请调整设置")
@@ -830,6 +850,7 @@ class Application:
     def make_batch(self, config, result, assets, *, music_root=None, scheduled_run_id=None,
                    schedule_name=None, index_offset=0):
         config = copy.deepcopy(config)
+        history = config.pop('_music_folder_history', {})
         result = copy.deepcopy(result)
         output = Path(config['output_dir']).expanduser().resolve()
         batch_id = uuid.uuid4().hex[:12]
@@ -869,6 +890,8 @@ class Application:
             folder, _ = self.reserve_review_bundle(output_folder, item, label=output.name)
             item['output_bundle'] = str(folder)
             item['output_path'] = str(folder / item['output_name'])
+        for folder in folder_catalog:
+            folder['historical_usage'] = history.get(folder['path'], {'completed': 0, 'pending': 0, 'last_used': 0})
         batch = {'id': batch_id, 'status': 'draft', 'created_at': time.time(),
                  'updated_at': time.time(), 'config': config, 'items': items,
                  'stats': result.get('stats', {}), 'warnings': result.get('warnings', []),
@@ -1029,7 +1052,12 @@ class Application:
         return self.store.update(batch_id, change)
 
     def change_music_folder(self, batch_id, item_id, body):
+        with self.music_allocation_lock:
+            return self._change_music_folder(batch_id, item_id, body)
+
+    def _change_music_folder(self, batch_id, item_id, body):
         from . import foldermusic
+        history = self.store.folder_usage((batch_id, str(item_id)))
         def change(batch):
             if batch['status'] != 'draft' or batch['config'].get('music_mode') != 'folder':
                 raise ValueError('只有单文件夹模式的草稿方案可以更换音乐文件夹')
@@ -1037,16 +1065,19 @@ class Application:
             if item is None: raise ValueError('方案条目不存在')
             blocked = set(batch.get('failed_music_ids', []))
             grouped = foldermusic.groups([a for a in batch['assets'] if str(a.get('mime_type', '')).startswith('audio/') and a['id'] not in blocked], batch['config'].get('music_root'))
-            usage = defaultdict(int)
+            usage = defaultdict(int, {path: value['completed'] + value['pending'] for path, value in history.items()})
+            local_folders = defaultdict(int)
             for other in batch['items']:
                 if other is not item and not other.get('dismissed') and other.get('music_folder'):
-                    usage[other['music_folder']] += 1
+                    local_folders[other['music_folder']] += 1
             rng = random.Random(time.time_ns())
             folder = body.get('folder')
             if body.get('random') is True:
-                folder = foldermusic.choose_folder(grouped, usage, rng, item.get('music_folder'))
+                folder = foldermusic.choose_folder(grouped, usage, rng, item.get('music_folder'), history=history, local_usage=local_folders)
             if not isinstance(folder, str) or folder not in grouped: raise ValueError('所选文件夹不在当前方案的音乐库中或没有可用歌曲')
             order, _ = foldermusic.allocate(grouped[folder], item['duration'], batch['config'], rng)
+            for entry in batch.get('music_folder_catalog', []):
+                entry['historical_usage'] = history.get(entry['path'], {'completed': 0, 'pending': 0, 'last_used': 0})
             item.update(music_folder=folder, music_folder_song_count=len(grouped[folder]))
             item.pop('manual_music_order', None)
             self._set_item_music(batch, item, order)
