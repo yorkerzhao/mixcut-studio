@@ -32,7 +32,7 @@ with tempfile.TemporaryDirectory(prefix='mixcut185-') as tmp:
    for _ in range(100):
     try:boot=api('/api/bootstrap');break
     except OSError:time.sleep(.1)
-   assert boot['version']=='1.8.9'
+   assert boot['version']=='1.8.10'
    runtime=Path.home()/'.cache/codex-runtimes/codex-primary-runtime/dependencies/node'
    subprocess.run([str(runtime/'bin/node'),'tests/ui_package_v185.cjs'],env=dict(os.environ,NODE_PATH=str(runtime/'node_modules'),MIXCUT_TEST_URL=base),check=True)
    assert api('/api/batches')==[];assert not raw.exists();assert song.exists()
