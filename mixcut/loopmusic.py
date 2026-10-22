@@ -251,6 +251,10 @@ class LoopMusic:
                 if task['status'] != 'success':
                     raise ValueError('视频制作完成后才能审核')
                 self.check_output(task)
+                from .bundles import date_for_approval
+                with self.app.review_lock:
+                    date_for_approval(task, task['output_root'], self.app.reserve_review_bundle,
+                                      lambda value: self.update(identity, **{k: value.get(k) for k in ('output_bundle', 'output_path', 'bundle_relocation', 'output_stamp')}))
                 self.cleanup(task)
                 self.update(identity, status='approved', stage='已审核，作品保留原处')
             elif action == 'reject':
@@ -270,6 +274,9 @@ class LoopMusic:
         return self.store.get('task:' + identity, {'deleted': True})
 
     def check_output(self, task):
+        if task.get('bundle_relocation'):
+            from .bundles import finish_relocation
+            finish_relocation(task, lambda value: self.update(task['id'], **{k: value.get(k) for k in ('output_bundle', 'output_path', 'bundle_relocation', 'output_stamp')}))
         if file_stamp(task['output_path']) != task.get('output_stamp'):
             raise ValueError('成品文件已变化，请检查后再审核')
 

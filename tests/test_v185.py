@@ -1,3 +1,4 @@
+from datetime import datetime
 """Approved retention, pending shared-source cleanup and deferred record pruning."""
 import copy,unittest
 from pathlib import Path
@@ -19,7 +20,7 @@ class ApprovedRetirementTests(unittest.TestCase):
   asset={'id':path_identity(raw),'path':str(raw),'size':st.st_size,'mtime_ns':st.st_mtime_ns,'identity_mode':'path'}
   self.item.update(segments=[{'asset_id':asset['id'],'path':str(raw),'start':0,'duration':3}],video_assets=[asset])
   second=copy.deepcopy(self.item);second.update(id='2',index=2)
-  folder=self.folder.parent/'002-1007 aidj';folder.mkdir();video=folder/'second.mp4';video.write_bytes(b'second');st=video.stat()
+  folder=self.folder.parent/(datetime.now().astimezone().strftime('%y%m%d')+'-002');folder.mkdir();video=folder/'second.mp4';video.write_bytes(b'second');st=video.stat()
   second.update(output_bundle=str(folder),output_path=str(video),result={'output_size':st.st_size,'output_mtime_ns':st.st_mtime_ns})
   self.batch['items'].append(second);self.batch['config']['source_video_dir']=str(rawdir);self.app.store.put('batch:abc123',self.batch)
   self.app.approve({'batch_id':'abc123','item_id':'1'})

@@ -63,8 +63,6 @@ def export_filename(styles, index):
     return f'{prefix}_{int(index):03d}.mp4' if prefix else f'{int(index):03d}.mp4'
 
 
-def review_folder_name(root_name, number):
-    label = re.sub(r'[<>:"/\\|?*\x00-\x1f\x7f]', '_', root_name).strip(' .') or '审核通过'
-    if len(label.encode('utf-8')) > 220:
-        label = label.encode('utf-8')[:200].decode('utf-8', errors='ignore').rstrip(' .') + '-' + hashlib.sha256(label.encode()).hexdigest()[:8]
-    return f'{int(number):03d}-{label}'
+def review_folder_name(day, number):
+    """Portable daily task bundle name, independent of root labels or music."""
+    return f'{day}-{int(number):03d}'

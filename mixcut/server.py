@@ -1672,14 +1672,14 @@ class Application:
         from .naming import review_folder_name
         parent = Path(root)
         parent.mkdir(parents=True, exist_ok=True)
-        # Number the whole chosen archive directory, independently of media names.
-        label = review_folder_name(label or parent.name, 1).split('-', 1)[1]
+        # The reservation date is fixed across retries, including a midnight boundary.
+        day = datetime.now().astimezone().strftime('%y%m%d')
         highest = max((int(match.group(1)) for entry in parent.iterdir()
-                       if entry.is_dir() and (match := re.fullmatch(r'(\d+)-' + re.escape(label), entry.name))), default=0)
+                       if entry.is_dir() and (match := re.fullmatch(re.escape(day) + r'-(\d{3,})', entry.name))), default=0)
         styles = item.get('music_styles') or music_styles(item.get('music', []))
         number = highest + 1
         while True:
-            folder = parent / review_folder_name(label, number)
+            folder = parent / review_folder_name(day, number)
             try:
                 folder.mkdir()
                 return folder, Path(export_filename(styles, number)).stem
@@ -1691,6 +1691,9 @@ class Application:
             changed = False
             review_changed = False
             for item in batch['items']:
+                if item.get('bundle_relocation'):
+                    from .bundles import finish_relocation
+                    finish_relocation(item, lambda value: self.store.put('batch:' + batch['id'], batch))
                 if item.get('review', {}).get('status') == 'rejecting':
                     item['review'].update(status='reject_failed', error='上次清理中断，请点击重试不通过清理')
                     review_changed = True
@@ -2598,14 +2601,37 @@ class Application:
             item=next((i for i in batch['items'] if i['id']==iid),None)
             if not item or item.get('status')!='success': raise ValueError('只能审核已成功生成的视频')
             previous=item.get('review',{})
+            if previous.get('status') != 'approved':
+                # Do not move a video while a dependent sticker render still reads it.
+                for dependent in self.store.batches():
+                    origin = dependent.get('sticker_origin', {})
+                    if (origin.get('batch_id') == bid and origin.get('item_id') == iid
+                            and any(i.get('status') not in {'success', 'cancelled'} for i in dependent.get('items', []))):
+                        raise ValueError('贴图任务仍需读取原成片，请完成或删除贴图任务后再审核')
             if previous.get('status') in {'rejecting','reject_failed','rejected','superseded'}: raise ValueError('该任务无法审核通过')
             if item.get('thumbnails') and previous.get('status')!='approved':
                 if not self.review_ready(item) or not self.keyframes.ready(item['thumbnails'].get('version'),item['thumbnails'].get('total',0)):
                     raise ValueError('缩略图尚未准备好，请等待或重试生成后审核')
+            if item.get('bundle_relocation'):
+                from .bundles import finish_relocation
+                finish_relocation(item, lambda value: self.store.update(bid, lambda b: next(i for i in b['items'] if i['id'] == iid).update(value)))
             source=self.completed_output(bid,iid)
             stat=source.stat();expected=item.get('result',{})
             if previous.get('status')!='approved' and expected.get('output_mtime_ns') and (stat.st_size!=expected.get('output_size') or stat.st_mtime_ns!=expected['output_mtime_ns']):
                 raise ValueError('成片已被修改，请检查文件')
+            if previous.get('status') != 'approved':
+                from .bundles import date_for_approval
+                old_bundle = item.get('output_bundle')
+                def persist_bundle(value):
+                    def update_paths(current):
+                        next(i for i in current['items'] if i['id'] == iid).update(
+                            output_path=value['output_path'], output_bundle=value.get('output_bundle'),
+                            bundle_relocation=value.get('bundle_relocation'))
+                        if current.get('output_folder') == old_bundle:
+                            current.update(output_folder=value['output_bundle'], folder_name=Path(value['output_bundle']).name)
+                    self.store.update(bid, update_paths)
+                date_for_approval(item, batch['config']['output_dir'], self.reserve_review_bundle, persist_bundle)
+                source = Path(item['output_path'])
             self.write_music_sidecar(item,source,replace=True)
             if previous.get('status')!='approved':
                 review={'status':'approved','path':str(source),'retained':True,'size':stat.st_size,'mtime_ns':stat.st_mtime_ns,

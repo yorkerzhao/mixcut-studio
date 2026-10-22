@@ -131,7 +131,7 @@ class StickerApplicationTest(unittest.TestCase):
                          self.app.batch(original['id'])['items'][0]['review'])
         self.assertEqual(template['id'], job['config']['sticker_template_id'])
         self.assertEqual(asset['id'], job['config']['sticker_layers'][0]['sticker_id'])
-        self.assertRegex(Path(job['output_folder']).name, r'^\d{3}-exports$')
+        self.assertRegex(Path(job['output_folder']).name, r'^\d{6}-\d{3,}$')
         self.assertEqual(Path(job['output_folder']) / '001.mp4', Path(job_item['output_path']))
         self.assertEqual(job['id'], reply['output_batch_id'])
 
