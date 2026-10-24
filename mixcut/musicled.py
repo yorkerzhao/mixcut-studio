@@ -75,12 +75,17 @@ def video_segments(videos, target, config, rng, usage=None, occupied=None):
     if not videos:
         raise ValueError('没有可用视频')
     if config.get('mode', 'single') == 'single':
-        segment = choose_video_segment(videos, target, occupied, usage, rng,
-                                       allow_overlap=True, min_start_gap=float(config.get('start_gap', 0)))
-        if segment:
-            return [segment]
+        # Pick fairly from ALL admitted sources before checking available length.
+        # A short source remains eligible because it can loop to cover the music.
         level = min(usage[v['id']] for v in videos)
         source = rng.choice([v for v in videos if usage[v['id']] == level])
+        if float(source['duration']) + 1e-7 >= target:
+            segment = choose_video_segment([source], target, occupied, usage, rng,
+                                           allow_overlap=True, min_start_gap=float(config.get('start_gap', 0)))
+            if segment is None:
+                segment = choose_video_segment([source], target, occupied, usage, rng, allow_overlap=True)
+            if segment:
+                return [segment]
         return fit_segments([{'asset_id': source['id'], 'path': source['path'],
                               'start': 0., 'duration': float(source['duration'])}], target)
     if config.get('mode') != 'multi':
@@ -121,7 +126,7 @@ def plan(videos, music, config, previous_items=None, allow_partial=False):
         raise ValueError('生成数量或源视频时长门槛无效')
     videos = planner._selected(videos, config.get('video_ids'), '视频')
     before = len(videos)
-    videos = [v for v in videos if math.isfinite(float(v['duration'])) and float(v['duration']) > max(.1, threshold*60)]
+    videos = [v for v in videos if planner.source_meets_minimum(v, threshold)]
     music = planner._selected(music, None if config.get('music_mode') == 'folder' else config.get('music_ids'), '音乐')
     music = [s for s in music if math.isfinite(float(s['duration'])) and float(s['duration']) > .1]
     if not videos or not music:
@@ -138,8 +143,10 @@ def plan(videos, music, config, previous_items=None, allow_partial=False):
         fu.update({path: value['completed'] + value['pending'] for path, value in history.items()})
     for item in previous_items or []:
         for s in item['music']: mu[s['id']] += 1
+        for source_id in ({s['asset_id'] for s in item['segments']} if config.get('mode', 'single') == 'single'
+                          else [s['asset_id'] for s in item['segments']]):
+            vu[source_id] += 1
         for s in item['segments']:
-            vu[s['asset_id']] += 1
             occupied[s['asset_id']].append((s['start'],s['start']+s['duration']))
         if item.get('music_folder'):
             local_folders[item['music_folder']] += 1
@@ -169,8 +176,10 @@ def plan(videos, music, config, previous_items=None, allow_partial=False):
             local_folders[folder] += 1
         items.append(item)
         for song in order: mu[song['id']] += 1
+        for source_id in ({s['asset_id'] for s in segments} if config.get('mode', 'single') == 'single'
+                          else [s['asset_id'] for s in segments]):
+            vu[source_id] += 1
         for seg in segments:
-            vu[seg['asset_id']] += 1
             occupied[seg['asset_id']].append((seg['start'],seg['start']+seg['duration']))
     stats = planner.annotate_batch(items)
     if before > len(videos): warnings.append(f'源视频时长筛选已排除 {before-len(videos)} 条视频')

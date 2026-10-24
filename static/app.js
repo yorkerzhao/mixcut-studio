@@ -228,7 +228,8 @@
       const row = document.createElement('li'); row.className = 'plan-media-row';
       const label = document.createElement('span'); label.textContent = `${segment.path || segment.asset_id} · ${fmt(segment.start)} 起，${fmt(segment.duration)}`;
       const overlapCount = 1 + (batch.items || []).filter(other => other !== item && (other.segments || []).some(candidate => segmentOverlap(segment, candidate))).length;
-      const badge = document.createElement('span'); badge.className = 'use-count'; badge.textContent = `片段出现 ${overlapCount} 次 · 源文件使用 ${counts.sources.get(segment.asset_id) || 1} 次`;
+      const badge = document.createElement('span'); badge.className = 'use-count'; badge.textContent = `画面重叠 ${overlapCount} 条任务 · 源文件引用 ${counts.sources.get(segment.asset_id) || 1} 段`;
+      badge.title = '画面重叠包含当前任务及其他使用了相交时间区间的任务；源文件引用按本批所有片段累计，含同一任务内循环。';
       row.append(label, badge);
       if (batch.status === 'draft') { const button = document.createElement('button'); button.type = 'button'; button.className = 'button replace-media'; button.textContent = '随机替换这段视频'; button.title = '优先保持成片时长，必要时联动重排音乐'; button.onclick = () => replaceMedia(batch,item,'video',index,button); row.append(button); const linked = document.createElement('button'); linked.type = 'button'; linked.className = 'button replace-media'; linked.textContent = '联动换视频和音乐'; linked.title = '允许重新选成片时长，并为这条任务重排整组音乐'; linked.onclick = () => replaceMedia(batch,item,'video',index,linked,true); row.append(linked); }
       list.append(row);
@@ -832,7 +833,7 @@
     };
     const configSummary = config => {
       const dimensions = config?.width && config?.height ? `${config.width}×${config.height}` : '默认尺寸';
-      return `${config?.mode === 'multi' ? '多源拼接' : '单源连续'} · ${Number(config?.min_source_duration_minutes || 0) > 0 ? '源视频 > ' + config.min_source_duration_minutes + ' 分钟' : '源视频不限时长'} · ${dimensions} · ${config?.fps || 30} fps · ${config?.allow_overlap ? '允许画面重叠' : '不允许画面重叠'}${config?.within_group ? ' · 仅组内拼接' : ''}`;
+      return `${config?.mode === 'multi' ? '多源拼接' : '单源连续'} · ${Number(config?.min_source_duration_minutes || 0) > 0 ? '源视频 ≥ ' + config.min_source_duration_minutes + ' 分钟' : '源视频不限时长'} · ${dimensions} · ${config?.fps || 30} fps · ${config?.allow_overlap ? '允许画面重叠' : '不允许画面重叠'}${config?.within_group ? ' · 仅组内拼接' : ''}`;
     };
     const runSummary = run => {
       const status = scheduleStatus[run.status] || run.status || '未知';

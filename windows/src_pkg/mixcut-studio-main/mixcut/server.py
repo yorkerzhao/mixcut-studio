@@ -1166,10 +1166,10 @@ class Application:
                 return
 
             selected = set(config.get('video_ids') or [])
-            threshold = float(config.get('min_source_duration_minutes', 0)) * 60
+            threshold = float(config.get('min_source_duration_minutes', 0))
             current = item['segments'][index]
             videos = [asset for asset in batch['assets'] if (asset['id'] in selected or (not selected and str(asset.get('mime_type', '')).startswith('video/')))
-                      and float(asset['duration']) > threshold and asset['id'] != current['asset_id']]
+                      and planner.source_meets_minimum(asset, threshold) and asset['id'] != current['asset_id']]
             videos = self.allowed_videos(videos)
             if config.get('mode') == 'multi' and config.get('within_group'):
                 other = next((part for n, part in enumerate(item['segments']) if n != index), None)
@@ -1179,7 +1179,15 @@ class Application:
                 from .musicled import fit_segments, video_segments
                 if not videos: raise ValueError('没有其他可替换视频')
                 if config.get('mode', 'single') == 'single':
-                    updated = video_segments(videos, item['duration'], config, rng)
+                    usage, occupied = defaultdict(int), defaultdict(list)
+                    for other_item in batch['items']:
+                        if other_item is item or other_item.get('dismissed'):
+                            continue
+                        for source_id in {s['asset_id'] for s in other_item.get('segments', [])}:
+                            usage[source_id] += 1
+                        for part in other_item.get('segments', []):
+                            occupied[part['asset_id']].append((part['start'], part['start']+part['duration']))
+                    updated = video_segments(videos, item['duration'], config, rng, usage, occupied)
                 else:
                     source = rng.choice(videos)
                     replacement = {'asset_id':source['id'],'path':source['path'],'start':0.,
