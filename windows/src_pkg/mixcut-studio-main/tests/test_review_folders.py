@@ -1,33 +1,47 @@
 import concurrent.futures
+from datetime import datetime
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 from mixcut.server import Application
 from mixcut.naming import review_folder_name
 
-
 class ReviewFolderNames(unittest.TestCase):
-    def test_directory_name_and_number_across_styles_and_existing_gaps(self):
+    def test_daily_sequence_ignores_old_names_and_other_dates(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root=Path(tmp)/'1006 aidj';root.mkdir()
-            (root/'001-1006 aidj').mkdir();(root/'003-1006 aidj').mkdir()
-            (root/'2026-10-06').mkdir()
-            folder,name=Application.reserve_review_bundle(root,{'music_styles':['任意歌曲名']})
-            self.assertEqual('004-1006 aidj',folder.name)
-            self.assertEqual(root,folder.parent)
-            other,_=Application.reserve_review_bundle(root,{'music_styles':['完全不同']})
-            self.assertEqual('005-1006 aidj',other.name)
+            root = Path(tmp)/'任意目录'; root.mkdir()
+            for name in ['001-旧名称', '261022-999', '261023-001', '261023-003']:
+                (root/name).mkdir()
+            (root/'261023-900').write_text('not a directory')
+            with patch('mixcut.server.datetime') as clock:
+                clock.now.return_value.astimezone.return_value = datetime(2026,10,23)
+                folder, name = Application.reserve_review_bundle(root, {'music_styles':['Hindi']})
+                other, _ = Application.reserve_review_bundle(root, {}, label='不应出现在名称里')
+            self.assertEqual('261023-004', folder.name)
+            self.assertEqual('Hindi_004', name)
+            self.assertEqual('261023-005', other.name)
+            self.assertEqual(root, folder.parent)
 
     def test_concurrent_reservations_are_unique(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root=Path(tmp)/'1006 aidj'
+            root=Path(tmp)/'archive'
             with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
                 folders=list(pool.map(lambda _:Application.reserve_review_bundle(root,{})[0],range(12)))
             self.assertEqual(12,len(set(folders)))
-            self.assertEqual({f'{n:03d}-1006 aidj' for n in range(1,13)},{f.name for f in folders})
+            day=datetime.now().astimezone().strftime('%y%m%d')
+            self.assertEqual({f'{day}-{n:03d}' for n in range(1,13)},{f.name for f in folders})
 
-    def test_unicode_long_name_and_four_digit_number(self):
-        self.assertEqual('001-中文 aidj',review_folder_name('中文 aidj',1))
-        self.assertEqual('1000-1006 aidj',review_folder_name('1006 aidj',1000))
-        self.assertLess(len(review_folder_name('中'*150,1).encode()),255)
-        self.assertNotIn(':',review_folder_name('name:other',1))
+    def test_year_and_four_digit_sequence(self):
+        self.assertEqual('261023-001',review_folder_name('261023',1))
+        self.assertEqual('270101-1000',review_folder_name('270101',1000))
+
+    def test_next_day_restarts_and_existing_file_is_preserved(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp); (root/'261023-001').mkdir()
+            (root/'261024-001').write_text('keep')
+            with patch('mixcut.server.datetime') as clock:
+                clock.now.return_value.astimezone.return_value=datetime(2026,10,24)
+                folder,_=Application.reserve_review_bundle(root,{})
+            self.assertEqual('261024-002',folder.name)
+            self.assertEqual('keep',(root/'261024-001').read_text())

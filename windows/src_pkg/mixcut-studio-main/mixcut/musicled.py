@@ -148,7 +148,10 @@ def plan(videos, music, config, previous_items=None, allow_partial=False):
     for index in range(count):
         folder = foldermusic.choose_folder(grouped, fu, rng, history=history, local_usage=local_folders) if grouped else None
         order = choose_music(grouped[folder] if folder else music, config, rng, mu)
-        total = sum(float(s['duration']) for s in order)
+        from .musicrounds import apply as repeat_playlist
+        repeated = {}
+        total = repeat_playlist(repeated, order, config.get('music_repeats', 1))
+        order = repeated['music']
         for attempt in range(24):
             segments = video_segments(videos, total, config, rng, vu, occupied)
             key = planner.video_plan_key(segments, config.get('fps',30))
@@ -159,8 +162,9 @@ def plan(videos, music, config, previous_items=None, allow_partial=False):
                 'duration_basis':'music','duration':total,'music_total_duration':total,
                 'segments':segments,'music':copy.deepcopy(order),'video_assets':list({v['id']:v for v in videos if any(s['asset_id']==v['id'] for s in segments)}.values()),
                 'video_fingerprint':planner._fingerprint(key),'music_fingerprint':planner._fingerprint(tuple(s['id'] for s in order))}
+        item.update({key: repeated[key] for key in ('music_base','music_repeats','music_base_duration')})
         if folder:
-            item.update(music_folder=folder,music_folder_song_count=len(order))
+            item.update(music_folder=folder,music_folder_song_count=len(repeated['music_base']))
             fu[folder] += 1
             local_folders[folder] += 1
         items.append(item)

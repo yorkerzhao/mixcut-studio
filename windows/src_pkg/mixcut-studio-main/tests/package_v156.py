@@ -53,7 +53,7 @@ def main():
     batches.append((bid,iid))
    bid,iid=batches[-1]
    reviewed=api('/api/approve',{'batch_id':bid,'item_id':iid,'review_dir':str(root/'approved')})
-   approved=reviewed['items'][0]['review']['path'];assert Path(approved).parent.name=='001-approved';assert Path(approved).parent.parent==root/'approved';assert Path(approved).with_suffix('.txt').read_text().count('曲目列表')==1
+   approved=reviewed['items'][0]['review']['path'];assert Path(approved).parent.name.endswith('-001');assert Path(approved).parent.parent==root/'approved';assert Path(approved).with_suffix('.txt').read_text().count('曲目列表')==1
    api('/api/tasks/track-titles',{'enabled':False,'selections':[{'batch_id':bid,'item_id':iid}]})
    assert '曲目列表' not in Path(approved).with_suffix('.txt').read_text()
    assert all(Path(song['path']).is_file() for song in songs),'music must remain'

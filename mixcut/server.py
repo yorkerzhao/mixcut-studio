@@ -115,6 +115,7 @@ class Application:
         self.running_version = app_version()
         self.store = Store(state_dir)
         self.music_allocation_lock = threading.RLock()
+        self.render_claims = set()
         from .nonstop import MusicEdges
         self.music_edges = MusicEdges(self.store)
         self.closing = threading.Event()
@@ -795,6 +796,8 @@ class Application:
         template, layers = self.resolve_sticker_template(config.get('sticker_template_id'))
         config['sticker_template'] = template
         config['sticker_layers'] = layers
+        from .musicrounds import validate as validate_repeats
+        config['music_repeats'] = validate_repeats(config.get('music_repeats', 1))
         config.setdefault('count', 50)
         count = int(config['count'])
         if not 1 <= count <= 500:
@@ -936,16 +939,21 @@ class Application:
 
     def _set_item_music(self, batch, item, order):
         root = batch['config'].get('music_root') or self.store.get('library', {}).get('music_dir')
-        item['music'] = [tag_music_style(song, root) for song in order]
-        item['music_total_duration'] = sum(float(song['duration']) for song in order)
+        order = [tag_music_style(song, root) for song in order]
+        if batch['config'].get('duration_basis') == 'music' and 'music_base' in item:
+            from .musicrounds import apply as repeat_playlist
+            repeat_playlist(item, order, item.get('music_repeats', 1))
+        else:
+            item['music'] = order
+        item['music_total_duration'] = sum(float(song['duration']) for song in item['music'])
         if batch['config'].get('duration_basis') == 'music':
-            from .musicled import fit_segments
+            from .musicrounds import retime
             item['duration'] = item['music_total_duration']
-            item['segments'] = fit_segments(item['segments'], item['duration'])
+            item['segments'] = retime(item, item['duration'], batch['config'])
             item['video_fingerprint'] = self._fingerprint(video_plan_key(item['segments'], batch['config'].get('fps', 30)))
             item.pop('nonstop', None)
             item.pop('planned_duration', None)
-        item['music_fingerprint'] = self._fingerprint(tuple(song['id'] for song in order))
+        item['music_fingerprint'] = self._fingerprint(tuple(song['id'] for song in item['music']))
         item['music_source_folders'] = music_folders(item['music'])
         item['music_styles'] = music_styles(item['music'], root)
         item['output_name'] = export_filename(item['music_styles'], item['index'])
@@ -965,7 +973,7 @@ class Application:
             item = next((entry for entry in batch['items'] if str(entry['id']) == str(item_id)), None)
             if item is None:
                 raise ValueError('方案条目不存在')
-            current_ids = [song['id'] for song in item.get('music', [])]
+            current_ids = [song['id'] for song in item.get('music_base', item.get('music', []))]
             if len(music_ids) != len(current_ids) or sorted(music_ids) != sorted(current_ids):
                 raise ValueError('只能调整当前方案已有歌曲的顺序')
             candidate = fingerprint(music_ids)
@@ -975,9 +983,13 @@ class Application:
                 other_ids = [song['id'] for song in other.get('music', [])]
                 if fingerprint(other_ids) == candidate:
                     raise ValueError('该歌曲顺序与本批另一条方案重复，请换一个顺序')
-            by_id = {song['id']: song for song in item['music']}
-            item['music'] = [by_id[value] for value in music_ids]
-            item['music_fingerprint'] = candidate
+            by_id = {song['id']: song for song in item.get('music_base', item['music'])}
+            order = [by_id[value] for value in music_ids]
+            if 'music_base' in item:
+                self._set_item_music(batch, item, order)
+            else:
+                item['music'] = order
+                item['music_fingerprint'] = candidate
             item['manual_music_order'] = True
             self._update_plan_counts(batch)
 
@@ -1100,7 +1112,8 @@ class Application:
             if item is None:
                 raise ValueError('方案条目不存在')
             field = 'music' if kind == 'music' else 'segments'
-            if index < 0 or index >= len(item.get(field, [])):
+            entries = item.get('music_base', item.get('music', [])) if kind == 'music' else item.get(field, [])
+            if index < 0 or index >= len(entries):
                 raise ValueError('替换位置超出范围')
             config = batch['config']
             rng = random.Random(time.time_ns())
@@ -1114,11 +1127,11 @@ class Application:
                     if index < 2 and len(foldermusic.opening_tracks(grouped.get(item['music_folder'], []))) == 2:
                         raise ValueError('前两首自动固定为01、02；需要手动调整请拖动歌曲或使用上下箭头')
                     if config.get('duration_basis') == 'music':
-                        positions = [n for n in range(2, len(item['music'])) if n != index]
+                        positions = [n for n in range(2, len(item.get('music_base', item['music']))) if n != index]
                         if not positions:
                             raise ValueError('没有其他可随机换位的歌曲')
                         other = rng.choice(positions)
-                        order = list(item['music'])
+                        order = list(item.get('music_base', item['music']))
                         order[index], order[other] = order[other], order[index]
                         self._set_item_music(batch, item, order)
                         return
@@ -1132,7 +1145,7 @@ class Application:
                     self._set_item_music(batch, item, order)
                     return
                 selected = set(config.get('music_ids') or [])
-                current = item['music']
+                current = item.get('music_base', item['music'])
                 ids = {song['id'] for song in current}
                 usage = defaultdict(int)
                 for other in batch['items']:
@@ -1262,6 +1275,27 @@ class Application:
             self._cleanup_approved_sources()
             result = self.batch(batch_id)
         return result
+
+    def set_music_repeats(self, batch_id, item_id, body):
+        from .musicrounds import validate, apply as repeat_playlist
+        repeats = validate(body.get('music_repeats'))
+        def change(batch):
+            item = next((i for i in batch['items'] if str(i['id']) == str(item_id)), None)
+            if item is None:
+                raise ValueError('任务不存在')
+            if (batch['config'].get('duration_basis') != 'music' or batch.get('sticker_origin')
+                    or item.get('kind') == 'sticker_variant'):
+                raise ValueError('仅普通音乐时长混剪任务支持播放轮数')
+            if (item.get('status') != 'pending' or item.get('dismissed') or item.get('attempts', 0)
+                    or item.get('progress', 0) or item.get('result')
+                    or (batch_id, str(item_id)) in self.render_claims
+                    or (item.get('output_path') and Path(item['output_path']).exists())):
+                raise ValueError('仅尚未开始制作的任务可修改轮数；制作中的任务请先停止并重新规划')
+            base = item.get('music_base', item['music'])
+            repeat_playlist(item, base, repeats)
+            self._set_item_music(batch, item, base)
+        with self.music_allocation_lock:
+            return self.store.update(batch_id, change)
 
     def item_action(self, batch_id, item_id, action):
         if action == 'delete':
@@ -1890,6 +1924,19 @@ class Application:
         self.write_manifest(batch_id)
 
     def execute_item(self, batch_id, index):
+        with self.store.lock:
+            batch = self.batch(batch_id)
+            key = (batch_id, str(batch['items'][index]['id']))
+            if key in self.render_claims:
+                return
+            self.render_claims.add(key)
+        try:
+            return self._execute_item(batch_id, index)
+        finally:
+            with self.store.lock:
+                self.render_claims.discard(key)
+
+    def _execute_item(self, batch_id, index):
         from .processwatch import RenderStalled
         from .checkpoints import VideoRecoveryNeeded
         from . import media, renderer
@@ -2949,6 +2996,9 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json_response(self.app.create_plan(body))
                 if path == '/api/tasks/track-titles':
                     return self.json_response(self.app.set_track_titles(body))
+                repeats_match = re.fullmatch(r'/api/batches/([a-f0-9]+)/items/([^/]+)/music-repeats', path)
+                if repeats_match:
+                    return self.json_response(self.app.set_music_repeats(*repeats_match.groups(), body))
                 music_order_match = re.fullmatch(r'/api/batches/([a-f0-9]+)/items/([^/]+)/music-order', path)
                 if music_order_match:
                     return self.json_response(self.app.reorder_music(

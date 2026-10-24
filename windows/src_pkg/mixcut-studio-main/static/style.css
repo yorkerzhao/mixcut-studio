@@ -26,3 +26,5 @@
 #music-loop .loop-heading input[type=checkbox]{width:18px;height:18px;flex:0 0 18px;margin:0}#music-loop .loop-heading strong{flex:1;min-width:0;overflow-wrap:anywhere}#music-loop .loop-details{margin-top:18px}
 #music-loop video{display:block;width:min(100%,640px);margin:16px 0}#music-loop .loop-cache{margin-top:14px}
 #music-loop .notice{white-space:pre-line}
+
+.music-repeats-option{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:8px 0}.music-repeats-option select{width:auto;min-width:140px;margin:0}#batches .music-repeats-option{grid-column:3/-1}

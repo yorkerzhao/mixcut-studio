@@ -1,5 +1,6 @@
 """Task-folder recycling separates unreviewed and approved outputs."""
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 from mixcut.server import Application
@@ -13,7 +14,7 @@ class FolderDeletionTests(unittest.TestCase):
   self.app.forget_items([{'batch_id':'abc123','item_ids':['1']}])
   self.assertFalse(self.folder.exists())
   next_folder,_=self.app.reserve_review_bundle(self.folder.parent,{},label=self.output.name)
-  self.assertEqual(self.folder,next_folder)
+  self.assertEqual(datetime.now().astimezone().strftime('%y%m%d') + '-001',next_folder.name)
  def test_unreviewed_bundle_and_documents_recycled_sources_untouched(self):
   source=self.root/'raw.mp4';source.write_bytes(b'raw')
   song=self.root/'song.mp3';song.write_bytes(b'music')

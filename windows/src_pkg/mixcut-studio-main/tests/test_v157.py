@@ -1,5 +1,6 @@
 """Retention, bundle ownership, native trash and legacy shared directory tests."""
 from pathlib import Path
+from datetime import datetime
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -13,7 +14,7 @@ class RetainedReviewTests(unittest.TestCase):
         self.root=Path(self.tmp.name).resolve();self.app=Application(self.root/'state')
         install_recycle_fixture(self,self.root)
         self.addCleanup(self.app.closing.set)
-        self.output=self.root/'1007 aidj';self.folder=self.output/'2026-10-07'/'001-1007 aidj';self.folder.mkdir(parents=True)
+        self.output=self.root/'1007 aidj';self.folder=self.output/datetime.now().astimezone().strftime('%Y-%m-%d')/(datetime.now().astimezone().strftime('%y%m%d')+'-001');self.folder.mkdir(parents=True)
         self.video=self.folder/'成片.mp4';self.video.write_bytes(b'video');st=self.video.stat()
         self.item={'id':'1','index':1,'duration':3,'status':'success','progress':1,'music':[], 'music_source_folders':['/music'],
           'segments':[],'output_bundle':str(self.folder),'output_path':str(self.video),'result':{'output_size':st.st_size,'output_mtime_ns':st.st_mtime_ns}}
@@ -71,7 +72,7 @@ class RetainedReviewTests(unittest.TestCase):
         st=source.stat();asset={'id':path_identity(source),'path':str(source),'size':st.st_size,'mtime_ns':st.st_mtime_ns,'identity_mode':'path'}
         self.item.update(segments=[{'asset_id':asset['id'],'path':str(source),'start':0,'duration':3}],video_assets=[asset])
         second=copy.deepcopy(self.item);second['id']='2';second['index']=2
-        folder=self.folder.parent/'002-1007 aidj';folder.mkdir();output=folder/'second.mp4';output.write_bytes(b'second')
+        folder=self.folder.parent/(datetime.now().astimezone().strftime('%y%m%d')+'-002');folder.mkdir();output=folder/'second.mp4';output.write_bytes(b'second')
         stat=output.stat();second.update(output_bundle=str(folder),output_path=str(output),result={'output_size':stat.st_size,'output_mtime_ns':stat.st_mtime_ns})
         self.batch['items'].append(second);self.batch['config']['source_video_dir']=str(source_dir)
         self.app.store.put('batch:abc123',self.batch)

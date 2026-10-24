@@ -133,8 +133,8 @@ class LegacyArchiveReviewTests(unittest.TestCase):
         self.assertNotEqual(Path(first['path']).parent, Path(second['path']).parent)
         self.assertEqual('去重歌曲03_001', Path(first['path']).stem)
         self.assertEqual('去重歌曲03_002', Path(second['path']).stem)
-        self.assertEqual('001-reviewed', Path(first['path']).parent.name)
-        self.assertEqual('002-reviewed', Path(second['path']).parent.name)
+        self.assertEqual(datetime.now().astimezone().strftime('%y%m%d') + '-001', Path(first['path']).parent.name)
+        self.assertEqual(datetime.now().astimezone().strftime('%y%m%d') + '-002', Path(second['path']).parent.name)
         self.assertEqual(original, Path(first['path']).read_bytes())
         sidecar = Path(first['path']).with_suffix('.txt')
         self.assertEqual([str(self.root / 'music' / '去重歌曲03')], sidecar.read_text().splitlines())
@@ -189,7 +189,7 @@ class LegacyArchiveReviewTests(unittest.TestCase):
 
     def test_different_existing_file_is_not_overwritten(self):
         day = datetime.now().astimezone().strftime('%Y-%m-%d')
-        folder = self.target_root / '001-reviewed'; folder.mkdir(parents=True)
+        folder = self.target_root / (datetime.now().astimezone().strftime('%y%m%d') + '-001'); folder.mkdir(parents=True)
         target = folder / '去重歌曲03_001.mp4'
         target.write_bytes(b'keep-existing')
         approved = self.approve()['items'][0]['review']
