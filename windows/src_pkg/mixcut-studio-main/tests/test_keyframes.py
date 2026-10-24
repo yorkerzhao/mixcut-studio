@@ -27,7 +27,7 @@ class KeyframeTests(unittest.TestCase):
     def setUp(self):
         self.cache = KeyframeCache(self.root / self._testMethodName)
 
-    def test_frames_are_sampled_every_thirty_seconds(self):
+    def test_frames_are_sampled_every_sixty_seconds(self):
         data = self.cache.describe(self.video)
         self.assertEqual(1, data['total'])
         self.assertEqual([0], [frame['time'] for frame in data['frames']])

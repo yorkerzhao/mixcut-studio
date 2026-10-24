@@ -19,7 +19,7 @@ with tempfile.TemporaryDirectory(prefix='mixcut1812-') as tmp:
    for _ in range(100):
     try:boot=api('/api/bootstrap');break
     except OSError:time.sleep(.1)
-   assert boot['version']=='1.8.12';api('/api/scan',{'video_dir':str(videos),'music_dir':str(music)});api('/api/preferences',{'output_dir':str(outputs)})
+   assert boot['version']=='1.8.13';api('/api/scan',{'video_dir':str(videos),'music_dir':str(music)});api('/api/preferences',{'output_dir':str(outputs)})
    runtime=Path.home()/'.cache/codex-runtimes/codex-primary-runtime/dependencies/node'
    subprocess.run([str(runtime/'bin/node'),'tests/ui_package_v1812.cjs'],env=dict(os.environ,NODE_PATH=str(runtime/'node_modules'),MIXCUT_TEST_URL=base),check=True,timeout=90)
    batch=next(b for b in api('/api/batches') if b['status']=='draft')
@@ -51,7 +51,7 @@ with tempfile.TemporaryDirectory(prefix='mixcut1812-') as tmp:
     else:raise AssertionError('completed edit should reject')
    with sqlite3.connect((state/'state.sqlite3').as_uri()+'?mode=ro',uri=True) as conn:assert conn.execute('select sum(completed) from music_folder_usage').fetchone()[0]==3
    assert raw.exists();assert len(list(music.rglob('*.m4a')))==5
-   print('V1.8.12 packaged acceptance passed: three actual renders from three different source lengths; audio frequency verified every song in every round; complete repeated title documents; duration matched; finished edits rejected; inclusive source boundary, below-boundary exclusion, short source loops, long source trim; folder history counted three tasks; original video/music preserved.')
+   print('V1.8.13 packaged acceptance passed: three actual renders from three different source lengths; audio frequency verified every song in every round; complete repeated title documents; duration matched; finished edits rejected; inclusive source boundary, below-boundary exclusion, short source loops, long source trim; folder history counted three tasks; original video/music preserved.')
   finally:
    try:api('/api/shutdown',{})
    except Exception:pass

@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import shutil
 import time
 from pathlib import Path
@@ -21,15 +22,48 @@ class KeyframeCache:
         self.locks = {}
         self.deleted_versions = set()
 
-    def _version(self, path):
+    def _version(self, path, legacy=False):
         path = Path(path).resolve(strict=True)
         stat = path.stat()
-        identity = f'{path}:{stat.st_size}:{stat.st_mtime_ns}:keyframes-v3-paired-30s'
+        sampling = 'keyframes-v3-paired-30s' if legacy else 'keyframes-v4-paired-60s'
+        identity = f'{path}:{stat.st_size}:{stat.st_mtime_ns}:{sampling}'
         return hashlib.sha256(identity.encode()).hexdigest()[:24]
 
     def _lock(self, key):
         with self.guard:
             return self.locks.setdefault(key, threading.Lock())
+
+    def _reuse_legacy(self, path, version, directory):
+        """Reuse every second paired 30s image; never decode completed old previews."""
+        legacy = self._version(path, legacy=True)
+        old = self.root / legacy
+        try:
+            data = json.loads((old / 'index.json').read_text(encoding='utf-8'))
+            if data.get('version') != legacy or not self.ready(legacy, data['total']):
+                return None
+            if len(data['frames']) != data['total'] or not data['frames']:
+                return None
+            chosen = data['frames'][::2]
+            directory.mkdir(parents=True, exist_ok=True)
+            for index, frame in enumerate(chosen):
+                for size in ('thumb', 'large'):
+                    source = old / f"{int(frame['index']):06d}-{size}.jpg"
+                    target = directory / f'{index:06d}-{size}.jpg'
+                    if not target.exists():
+                        try:
+                            os.link(source, target)
+                        except OSError:
+                            shutil.copyfile(source, target)
+            if self._version(path) != version:
+                raise ValueError('视频已变化，请重新加载缩略图')
+            response = dict(data, version=version, total=len(chosen), interval_seconds=60,
+                            frames=[{'index':i, 'time':frame['time']} for i,frame in enumerate(chosen)])
+            temporary = directory / ('index-' + uuid.uuid4().hex + '.tmp')
+            temporary.write_text(json.dumps(response, ensure_ascii=False), encoding='utf-8')
+            temporary.replace(directory / 'index.json')
+            return response
+        except (OSError, KeyError, TypeError, json.JSONDecodeError):
+            return None
 
     def describe(self, path):
         version = self._version(path)
@@ -40,6 +74,9 @@ class KeyframeCache:
                 raise ValueError('该任务的缩略图已清理')
             if metadata.is_file():
                 return json.loads(metadata.read_text(encoding='utf-8'))
+            reused = self._reuse_legacy(path, version, directory)
+            if reused is not None:
+                return reused
             with self.slots:
                 result = subprocess.run(
                     ['ffprobe', '-v', 'error', '-threads', '1', '-show_entries',
@@ -53,9 +90,9 @@ class KeyframeCache:
                 raise ValueError('视频时长无效，请检查文件是否可正常播放')
             if self._version(path) != version:
                 raise ValueError('视频已变化，请刷新后重新加载关键帧')
-            timestamps = [float(value) for value in range(0, max(1, math.ceil(duration)), 30)]
+            timestamps = [float(value) for value in range(0, max(1, math.ceil(duration)), 60)]
             frames = [{'index': index, 'time': value} for index, value in enumerate(timestamps)]
-            response = {'version': version, 'duration': duration, 'total': len(frames), 'frames': frames}
+            response = {'version': version, 'duration': duration, 'total': len(frames), 'frames': frames, 'interval_seconds': 60}
             directory.mkdir(parents=True, exist_ok=True)
             temporary = directory / ('index-' + uuid.uuid4().hex + '.tmp')
             temporary.write_text(json.dumps(response, ensure_ascii=False), encoding='utf-8')
@@ -78,7 +115,7 @@ class KeyframeCache:
             shutil.rmtree(self.root / version, ignore_errors=False) if (self.root / version).exists() else None
 
     def prepare(self, path, cancelled=lambda: False):
-        """Extract all 30-second thumbnails in one bounded, cancellable FFmpeg pass."""
+        """Extract all 60-second thumbnails in one bounded, cancellable FFmpeg pass."""
         data = self.describe(path)
         version = data['version']
         with self._lock('prepare:' + version):
@@ -96,7 +133,7 @@ class KeyframeCache:
                         'ffmpeg', '-nostdin', '-v', 'error', '-y', '-threads', '1',
                         '-reinit_filter:v', '0', '-i', str(path), '-filter_complex_threads', '1',
                         '-filter_complex',
-                        "[0:v:0]select='gte(t,selected_n*30)',split=2[small][big];"
+                        "[0:v:0]select='gte(t,selected_n*60)',split=2[small][big];"
                         "[small]scale=min(320\\,iw):-2[thumb];[big]scale=min(960\\,iw):-2[large]",
                         '-map', '[thumb]', '-an', '-fps_mode', 'vfr', '-threads', '1', '-q:v', '3',
                         '-start_number', '0', str(staging / '%06d-thumb.jpg'),

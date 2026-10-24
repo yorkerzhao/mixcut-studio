@@ -90,15 +90,15 @@ class PairedFrameTests(unittest.TestCase):
             listing=root/'concat.txt';listing.write_text("file 'one.mp4'\nfile 'two.mp4'\n")
             video=root/'joined.mp4';ff('-f','concat','-safe','0','-i',str(listing),'-c','copy',str(video))
             cache=KeyframeCache(root/'cache');data=cache.prepare(video)
-            self.assertEqual([0.,30.,60.],[f['time'] for f in data['frames']])
-            self.assertTrue(cache.ready(data['version'],3))
-            for index in range(3):
+            self.assertEqual([0.,60.],[f['time'] for f in data['frames']])
+            self.assertTrue(cache.ready(data['version'],2))
+            for index in range(2):
                 for size in ('thumb','large'):
                     with patch('mixcut.keyframes.subprocess.run',side_effect=AssertionError('cached preview must not decode')):
                         image=cache.image(video,index,size)
                     rgb=ff('-i',str(image),'-vf','scale=1:1','-frames:v','1','-pix_fmt','rgb24','-f','rawvideo','pipe:1').stdout
                     self.assertEqual(3,len(rgb))
-                    self.assertGreater(rgb[0] if index<2 else rgb[2],200)
+                    self.assertGreater(rgb[0] if index==0 else rgb[2],200)
 
     def test_rejected_original_checkpoint_is_not_reused(self):
         from mixcut import media, renderer, checkpoints

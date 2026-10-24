@@ -90,10 +90,10 @@ class ActualThumbnailTests(unittest.TestCase):
             try:
                 app.start_preview_worker();app.enqueue_previews('abc123','one');item=wait_ready(app)
                 self.assertEqual('ready',item['thumbnails']['status'],item['thumbnails'].get('error'))
-                self.assertEqual(3,item['thumbnails']['total'])
-                data=app.keyframes.describe(video);self.assertEqual([0.,30.,60.],[f['time'] for f in data['frames']])
+                self.assertEqual(2,item['thumbnails']['total'])
+                data=app.keyframes.describe(video);self.assertEqual([0.,60.],[f['time'] for f in data['frames']])
                 with patch('mixcut.keyframes.subprocess.run',side_effect=AssertionError('must serve cached image')):
-                    for index in range(3):self.assertTrue(app.keyframes.image(video,index).is_file())
+                    for index in range(2):self.assertTrue(app.keyframes.image(video,index).is_file())
                 version=data['version'];app.keyframes.image(video,0,'large')
                 app.approve({'batch_id':'abc123','item_id':'one','review_dir':str(root/'approved')})
                 self.assertFalse((app.keyframes.root/version).exists());self.assertTrue(video.exists())

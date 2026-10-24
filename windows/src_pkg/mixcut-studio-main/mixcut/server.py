@@ -351,6 +351,9 @@ class Application:
                 return
             old_version = preview.get('version')
             if old_version and old_version != version:
+                if (preview.get('status') == 'ready' and old_version == self.keyframes._version(item['output_path'], legacy=True)
+                        and self.keyframes.ready(old_version, preview.get('total', 0))):
+                    self.keyframes.describe(item['output_path'])  # Thin ready 30s cache before removing it.
                 self.keyframes.remove(old_version)
             self.store.update(batch_id, lambda b: next(i for i in b['items'] if str(i['id']) == str(item_id)).update(
                 thumbnails={'status': 'queued', 'version': version}))

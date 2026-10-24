@@ -14,7 +14,7 @@ class LauncherTransportTests(unittest.TestCase):
             def do_GET(self):
                 owner.requests.append(('GET',self.path))
                 self.send_response(200);self.end_headers()
-                self.wfile.write(json.dumps({'version':'1.8.12','api_protocol':17,'ffmpeg_available':True,'batches':[]}).encode())
+                self.wfile.write(json.dumps({'version':'1.8.13','api_protocol':17,'ffmpeg_available':True,'batches':[]}).encode())
             def do_POST(self):
                 owner.requests.append(('POST',self.path,self.rfile.read(int(self.headers['Content-Length']))))
                 self.send_response(200);self.end_headers();self.wfile.write(b'{"ok":true}')
@@ -26,7 +26,7 @@ class LauncherTransportTests(unittest.TestCase):
     def test_readiness_with_unavailable_ca_bundle_and_dead_system_proxies(self):
         with patch('ssl.create_default_context',side_effect=FileNotFoundError('missing CA bundle')),patch('urllib.request.getproxies',side_effect=AssertionError('must not inspect proxies')):
             data=maclaunch._readiness(self.port)
-        self.assertEqual('1.8.12',data['version']);self.assertEqual([('GET','/api/bootstrap')],self.requests)
+        self.assertEqual('1.8.13',data['version']);self.assertEqual([('GET','/api/bootstrap')],self.requests)
 
     def test_shutdown_post_uses_direct_transport(self):
         with patch('ssl.create_default_context',side_effect=FileNotFoundError('missing CA bundle')):
