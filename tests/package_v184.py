@@ -21,7 +21,7 @@ with tempfile.TemporaryDirectory(prefix='mixcut184-') as tmp:
    for _ in range(100):
     try:boot=api('/api/bootstrap');break
     except OSError:time.sleep(.1)
-   assert boot['version']=='1.8.13'
+   assert boot['version']=='1.8.14'
    config={'duration_basis':'music','music_mode':'folder','count':10,'width':640,'height':360,'fps':24,'hardware':'software_fast','output_dir':str(root/'outputs')}
    batch=api('/api/plan',{'config':config});folders=[Path(i['output_bundle']) for i in batch['items']]
    api('/api/tasks/forget',{'selections':[{'batch_id':batch['id'],'item_ids':[i['id'] for i in batch['items']]}]})
@@ -43,7 +43,7 @@ with tempfile.TemporaryDirectory(prefix='mixcut184-') as tmp:
    assert not b.exists()
    assert v.exists() and song.exists()
    assert api('/api/batches')==[]
-   print('V1.8.13 packaged native acceptance passed: ten empty reservations removed and numbers reusable; rendered unreviewed bundle recycled; approved folder/files byte-identical; original video/music preserved; task rows deleted.')
+   print('V1.8.14 packaged native acceptance passed: ten empty reservations removed and numbers reusable; rendered unreviewed bundle recycled; approved folder/files byte-identical; original video/music preserved; task rows deleted.')
   finally:
    try:api('/api/shutdown',{})
    except Exception:pass

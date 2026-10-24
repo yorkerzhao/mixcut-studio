@@ -351,9 +351,9 @@ class Application:
                 return
             old_version = preview.get('version')
             if old_version and old_version != version:
-                if (preview.get('status') == 'ready' and old_version == self.keyframes._version(item['output_path'], legacy=True)
+                if (preview.get('status') == 'ready' and old_version in self.keyframes.previous_versions(item['output_path'])
                         and self.keyframes.ready(old_version, preview.get('total', 0))):
-                    self.keyframes.describe(item['output_path'])  # Thin ready 30s cache before removing it.
+                    self.keyframes.describe(item['output_path'])  # Reuse ready 30/60s cache before removing it.
                 self.keyframes.remove(old_version)
             self.store.update(batch_id, lambda b: next(i for i in b['items'] if str(i['id']) == str(item_id)).update(
                 thumbnails={'status': 'queued', 'version': version}))
@@ -364,36 +364,66 @@ class Application:
     def start_preview_worker(self):
         if self.preview_worker and self.preview_worker.is_alive():
             return
-        def work():
-            while not self.closing.is_set():
+
+        def finish(key):
+            with self.preview_lock:
+                self.preview_jobs.pop(key, None)
+            self.preview_queue.task_done()
+
+        def run_job(entry):
+            key, path, cancel = entry
+            def update(value):
+                def change(batch):
+                    item = next((i for i in batch['items'] if str(i['id']) == key[1]), None)
+                    if item and not item.get('dismissed') and not cancel.is_set():
+                        item['thumbnails'].update(value)
+                self.store.update(key[0], change)
+            try:
+                if cancel.is_set() or self.closing.is_set():
+                    return
+                update({'status': 'generating'})
+                with self.cached_preview():
+                    data = self.keyframes.prepare(path, lambda: cancel.is_set() or self.closing.is_set())
+                update({'status': 'ready', 'total': data['total'], 'version': data['version'], 'error': None})
+            except InterruptedError:
+                pass
+            except Exception as exc:
                 try:
-                    key, path, cancel = self.preview_queue.get(timeout=.2)
-                except queue.Empty:
-                    continue
-                def update(value):
-                    def change(batch):
-                        item = next((i for i in batch['items'] if str(i['id']) == key[1]), None)
-                        if item and not item.get('dismissed') and not cancel.is_set():
-                            item['thumbnails'].update(value)
-                    self.store.update(key[0], change)
-                try:
-                    if cancel.is_set():
-                        continue
-                    update({'status': 'generating'})
-                    with self.cached_preview():
-                        data = self.keyframes.prepare(path, lambda: cancel.is_set() or self.closing.is_set())
-                    update({'status': 'ready', 'total': data['total'], 'version': data['version'], 'error': None})
-                except InterruptedError:
+                    update({'status': 'failed', 'error': str(exc)})
+                except ValueError:
                     pass
-                except Exception as exc:
-                    try:
-                        update({'status': 'failed', 'error': str(exc)})
-                    except ValueError:
-                        pass
+            finally:
+                finish(key)
+
+        def work():
+            active = set()
+            pending = None
+            with ThreadPoolExecutor(max_workers=4, thread_name_prefix='thumbnail-seek') as pool:
+                try:
+                    while not self.closing.is_set():
+                        active = {future for future in active if not future.done()}
+                        if pending is None:
+                            try:
+                                pending = self.preview_queue.get(timeout=.2)
+                            except queue.Empty:
+                                continue
+                        key, _, cancel = pending
+                        batch = self.store.get('batch:' + key[0], {})
+                        if cancel.is_set() or not batch:
+                            finish(key); pending = None
+                            continue
+                        try:
+                            capacity = max(1, min(4, int(batch.get('config', {}).get('parallel_tasks', 1))))
+                        except (ValueError, TypeError):
+                            capacity = 1
+                        if len(active) >= capacity:
+                            wait(active, timeout=.2, return_when=FIRST_COMPLETED)
+                            continue
+                        active.add(pool.submit(run_job, pending))
+                        pending = None
                 finally:
-                    with self.preview_lock:
-                        self.preview_jobs.pop(key, None)
-                    self.preview_queue.task_done()
+                    if pending is not None:
+                        finish(pending[0])
         self.preview_worker = threading.Thread(target=work, daemon=True, name='thumbnail-queue')
         self.preview_worker.start()
 
@@ -3153,7 +3183,7 @@ class Handler(BaseHTTPRequestHandler):
                             index = int(query['index'][0])
                             if index < 0 or index >= preview.get('total', 0):
                                 raise ValueError('关键帧编号超出范围')
-                            cache_missing = not (self.app.keyframes.root / preview['version'] / f'{index:06d}-{size}.jpg').is_file()
+                            cache_missing = not (self.app.keyframes.root / preview['version'] / f'{index:06d}.jpg').is_file()
                     if cache_missing:
                         self.app.enqueue_previews(query['batch'][0], query['item'][0])
                         raise ValueError('缩略图缓存已清除，正在重新准备')

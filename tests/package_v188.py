@@ -18,7 +18,7 @@ with tempfile.TemporaryDirectory(prefix='mixcut188-') as tmp:
   proc=subprocess.Popen([sys.argv[1],'--server','--port',str(port),'--state-dir',str(state)],stdout=log,stderr=log)
   for _ in range(100):
    try:
-    assert api('/api/bootstrap')['version']=='1.8.13';return proc
+    assert api('/api/bootstrap')['version']=='1.8.14';return proc
    except OSError:time.sleep(.1)
   raise AssertionError('server not ready')
  def stop(proc):
@@ -51,5 +51,5 @@ with tempfile.TemporaryDirectory(prefix='mixcut188-') as tmp:
    subprocess.run([str(runtime/'bin/node'),'tests/ui_package_v188.cjs'],env=dict(os.environ,NODE_PATH=str(runtime/'node_modules'),MIXCUT_TEST_URL=base),check=True,timeout=30)
    api('/api/batches/'+fourth['id']+'/items/'+fourth['items'][0]['id']+'/delete',{})
    assert ledger()=={folder:1 for folder in folders}
-   print('V1.8.13 packaged acceptance passed: three separate plans chose three folders; three actual renders recorded one success each; task deletion and server restart preserved counts; oldest folder chosen next; history UI visible; all source video/music preserved.')
+   print('V1.8.14 packaged acceptance passed: three separate plans chose three folders; three actual renders recorded one success each; task deletion and server restart preserved counts; oldest folder chosen next; history UI visible; all source video/music preserved.')
   finally:stop(proc)

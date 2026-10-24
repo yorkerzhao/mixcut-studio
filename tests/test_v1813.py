@@ -25,7 +25,7 @@ class MinuteSamplingTests(unittest.TestCase):
    self.assertEqual([0.,60.,120.],[f['time'] for f in data['frames']]);self.assertEqual(3,data['total'])
    self.cache.remove(old.name)
    for i in range(3):
-    for size in ('thumb','large'):self.assertEqual(f'{i*2}-{size}'.encode(),self.cache.image(self.video,i,size).read_bytes())
+    for size in ('thumb','large'):self.assertEqual(f'{i*2}-thumb'.encode(),self.cache.image(self.video,i,size).read_bytes())
  def test_old_incomplete_cache_is_not_reused(self):
   old=self.legacy();(old/'000004-large.jpg').unlink()
   with patch('mixcut.keyframes.subprocess.run',return_value=SimpleNamespace(returncode=0,stdout=json.dumps({'format':{'duration':130}}))) as probe:data=self.cache.describe(self.video)

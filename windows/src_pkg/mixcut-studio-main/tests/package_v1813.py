@@ -14,7 +14,7 @@ with tempfile.TemporaryDirectory(prefix='mixcut1813-') as tmp:
  # FFmpeg image2 defaults to starting at 1; normalize to legacy zero-based cache names.
  for n in range(3):(old/f'{n+1:06d}-thumb.jpg').rename(old/f'{n:06d}-thumb.jpg')
  for n in range(3):shutil.copy2(old/f'{n:06d}-thumb.jpg',old/f'{n:06d}-large.jpg')
- inode=(old/'000002-large.jpg').stat().st_ino
+ inode=(old/'000002-thumb.jpg').stat().st_ino
  (old/'index.json').write_text(json.dumps({'version':oldversion,'duration':70.,'total':3,'frames':[{'index':n,'time':n*30.} for n in range(3)]}))
  items=[]
  for n,path in enumerate([fresh,legacy],1):
@@ -30,7 +30,7 @@ with tempfile.TemporaryDirectory(prefix='mixcut1813-') as tmp:
    for _ in range(100):
     try:boot=api('/api/bootstrap');break
     except OSError:time.sleep(.1)
-   assert boot['version']=='1.8.13'
+   assert boot['version']=='1.8.14'
    for _ in range(400):
     batch=next(b for b in api('/api/batches') if b['id']=='abc123')
     if all(i.get('thumbnails',{}).get('status')=='ready' for i in batch['items']):break
@@ -40,13 +40,13 @@ with tempfile.TemporaryDirectory(prefix='mixcut1813-') as tmp:
     data=api(f'/api/keyframes?batch=abc123&item={n}');assert [f['time'] for f in data['frames']]==[0.,60.];assert data['total']==2
     for idx in range(2):
      for size in ['thumb','large']:
-      target=state/'keyframes'/data['version']/f'{idx:06d}-{size}.jpg';assert target.is_file()
+      target=state/'keyframes'/data['version']/f'{idx:06d}.jpg';assert target.is_file()
       rgb=ff('-i',str(target),'-vf','scale=1:1','-frames:v','1','-pix_fmt','rgb24','-f','rawvideo','pipe:1').stdout;assert rgb[0 if idx==0 else 2]>200
-    if n==2:assert (state/'keyframes'/data['version']/'000001-large.jpg').stat().st_ino==inode
+    if n==2:assert (state/'keyframes'/data['version']/'000001.jpg').stat().st_ino==inode
    assert not old.exists()
    runtime=Path.home()/'.cache/codex-runtimes/codex-primary-runtime/dependencies/node'
    subprocess.run([str(runtime/'bin/node'),'tests/ui_package_v1813.cjs'],env=dict(os.environ,NODE_PATH=str(runtime/'node_modules'),MIXCUT_TEST_URL=base),check=True,timeout=30)
-   print('V1.8.13 packaged acceptance passed: new 70-second video has two paired frames at 0/60s; both sizes match actual colors; legacy ready 30s previews reused by hardlink without full regeneration; old cache removed; real UI says every60seconds with two frames.')
+   print('V1.8.14 packaged acceptance passed: new 70-second video has two single-image frames at 0/60s; both sizes match actual colors; legacy ready 30s previews reused by hardlink without full regeneration; old cache removed; real UI says every60seconds with two frames.')
   finally:
    try:api('/api/shutdown',{})
    except Exception:pass
