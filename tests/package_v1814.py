@@ -19,7 +19,7 @@ with tempfile.TemporaryDirectory(prefix='mixcut1814-') as tmp:
   proc=subprocess.Popen([sys.argv[1],'--server','--port',str(port),'--state-dir',str(state)],stdout=log,stderr=log)
   try:
    for _ in range(100):
-    try:assert api('/api/bootstrap')['version']=='1.8.14';break
+    try:assert api('/api/bootstrap')['version']=='1.8.15';break
     except OSError:time.sleep(.1)
    peak=0
    for _ in range(800):
@@ -40,7 +40,7 @@ with tempfile.TemporaryDirectory(prefix='mixcut1814-') as tmp:
     assert urlopen(urls[0]).read()==urlopen(urls[1]).read()
    runtime=Path.home()/'.cache/codex-runtimes/codex-primary-runtime/dependencies/node'
    subprocess.run([str(runtime/'bin/node'),'tests/ui_package_v1814.cjs'],env=dict(os.environ,NODE_PATH=str(runtime/'node_modules'),MIXCUT_TEST_URL=base),check=True,timeout=30)
-   print('V1.8.14 packaged acceptance passed: three actual thumbnail jobs overlap; selected parallelism3 honored; 600-second videos each contain10 single JPEGs; minute timestamps; thumb/large APIs identical; hover uses same URL; no high-resolution files.')
+   print('V1.8.15 packaged acceptance passed: three actual thumbnail jobs overlap; selected parallelism3 honored; 600-second videos each contain10 single JPEGs; minute timestamps; thumb/large APIs identical; hover uses same URL; no high-resolution files.')
   finally:
    try:api('/api/shutdown',{})
    except Exception:pass

@@ -22,7 +22,7 @@ with tempfile.TemporaryDirectory(prefix='mixcut189-') as tmp:
   for _ in range(100):
    try:boot=api('/api/bootstrap');break
    except OSError:time.sleep(.1)
-  assert boot['version']=='1.8.14'
+  assert boot['version']=='1.8.15'
   for _ in range(200):
    current=api('/api/batches')[0]['items'][0]
    if current.get('thumbnails',{}).get('status')=='ready':break
@@ -34,7 +34,7 @@ with tempfile.TemporaryDirectory(prefix='mixcut189-') as tmp:
   assert new.stat().st_ino==inode and not old.exists()
   assert (new.parent/'cover.jpg').read_bytes()==b'cover' and (new.parent/'发布文案.txt').read_text()=='copy'
   assert result['items'][0]['review']['path']==str(new)
-  print('V1.8.14 frozen API acceptance passed: approval-date parent and child naming; full bundle retained; original inode preserved; persisted review path updated.')
+  print('V1.8.15 frozen API acceptance passed: approval-date parent and child naming; full bundle retained; original inode preserved; persisted review path updated.')
  finally:
   try:api('/api/shutdown',{})
   except Exception:pass

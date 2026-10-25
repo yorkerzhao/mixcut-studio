@@ -379,7 +379,7 @@ def plan(videos: list[dict[str, Any]], music: list[dict[str, Any]], config: dict
     from . import foldermusic
     grouped = foldermusic.groups(music, config.get("music_root")) if config.get("music_mode") == "folder" else {}
     if config.get("music_mode") == "folder" and not grouped:
-        raise ValueError("音乐根目录下没有包含有效音乐的子文件夹；请把歌曲整理到子文件夹后扫描")
+        raise ValueError("所选路径下没有包含有效音乐的末级文件夹，请重新扫描音乐库")
     if not videos or not music:
         if not videos and source_minutes > 0:
             message = f'没有时长达到 {source_minutes:g} 分钟的可用源视频（已排除 {filtered_video_count} 条）；请降低门槛或添加更长的视频'

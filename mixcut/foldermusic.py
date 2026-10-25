@@ -11,7 +11,12 @@ MAX_PLAYS = 4096
 
 
 def groups(music, root):
-    """Immediate children are groups; descendants belong to that same child."""
+    """Group by deepest music-bearing directories, independent of root depth.
+
+    Use scanned metadata only: no second traversal or media reads. Ancestor
+    directories containing loose audio are excluded when a deeper set exists.
+    Non-music subdirectories do not disqualify an otherwise valid set.
+    """
     if not root:
         raise ValueError('单文件夹音乐模式需要音乐库根路径，请重新扫描音乐库')
     base = Path(root).expanduser().resolve()
@@ -24,12 +29,20 @@ def groups(music, root):
             duration = float(song['duration'])
         except (KeyError, ValueError, TypeError):
             continue
-        if len(relative.parts) < 2 or not math.isfinite(duration) or duration <= .1 or str(path) in seen:
+        if not relative.parts or not math.isfinite(duration) or duration <= .1 or str(path) in seen:
             continue
         seen.add(str(path))
-        folder = str(base / relative.parts[0])
+        folder = str(path.parent)
         result.setdefault(folder, []).append(song)
-    return result
+    ancestors = set()
+    for folder in result:
+        parent = Path(folder).parent
+        while parent != base.parent and parent != parent.parent:
+            ancestors.add(str(parent))
+            if parent == base:
+                break
+            parent = parent.parent
+    return {folder: songs for folder, songs in result.items() if folder not in ancestors}
 
 
 def catalog(grouped):

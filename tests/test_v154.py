@@ -25,9 +25,9 @@ class FolderPlanningTests(unittest.TestCase):
         songs=[song(root,'A','a.mp3'),song(root,'A/nested','b.flac'),song(root,'B','a.mp3'),
                song(root,'','loose.m4a'),song(root,'C','zero.mp3',0),song(root,'C','nan.mp3',float('nan'))]
         groups=foldermusic.groups(songs+[songs[0]],root)
-        self.assertEqual({'/music/A','/music/B'},set(groups))
-        self.assertEqual(2,len(groups['/music/A']))
-        self.assertEqual(3,sum(len(v) for v in groups.values()))
+        self.assertEqual({'/music/A/nested','/music/B'},set(groups))
+        self.assertEqual(1,len(groups['/music/A/nested']))
+        self.assertEqual(2,sum(len(v) for v in groups.values()))
 
     def test_rounds_include_all_songs_no_boundary_repeat_and_no_length_bias(self):
         songs=[song(Path('/music'),'A',str(i),10+i) for i in range(3)]
@@ -59,7 +59,7 @@ class FolderPlanningTests(unittest.TestCase):
         self.assertEqual(6,len({i['music_folder'] for i in previous+more['items']}))
 
     def test_no_groups_and_runaway_cycles_fail_promptly(self):
-        self.assertEqual({},foldermusic.groups([song(Path('/music'),'','root.mp3')],'/music'))
+        self.assertEqual({'/music'},set(foldermusic.groups([song(Path('/music'),'','root.mp3')],'/music')))
         with self.assertRaises(ValueError):foldermusic.allocate([song(Path('/music'),'A','a',.2)],1e8,{},random.Random())
 
 

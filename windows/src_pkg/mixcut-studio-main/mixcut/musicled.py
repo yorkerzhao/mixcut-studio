@@ -134,7 +134,7 @@ def plan(videos, music, config, previous_items=None, allow_partial=False):
             return {'items': [], 'stats': {'count':0,'requested_count':count,'remaining':count}, 'warnings':['没有符合条件的视频或音乐']}
         raise ValueError('没有符合源视频时长门槛的视频，或没有可用音乐')
     grouped = foldermusic.groups(music, config.get('music_root')) if config.get('music_mode') == 'folder' else {}
-    if config.get('music_mode') == 'folder' and not grouped: raise ValueError('音乐根目录下没有有效音乐子文件夹')
+    if config.get('music_mode') == 'folder' and not grouped: raise ValueError('所选路径下没有有效的末级音乐文件夹')
     rng = random.Random(config.get('seed', 0))
     mu, vu, fu, occupied = defaultdict(int), defaultdict(int), defaultdict(int), defaultdict(list)
     local_folders = defaultdict(int)

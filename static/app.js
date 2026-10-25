@@ -195,8 +195,11 @@
     const selectedMusic = $$('.music-card .asset-select:checked').length;
     const folderMode = $('#config-form').elements.music_mode.value === 'folder';
     const root = (state.libraryDirs.music || '').replace(/\/$/,'') + '/';
-    const folders = new Set((state.scan.music || []).map(song => song.path || '').filter(path => path.startsWith(root) && path.slice(root.length).includes('/')).map(path => path.slice(root.length).split('/')[0]));
-    if (folderMode) { $('#selection-summary').textContent = `已选 ${selectedVideo} 条视频 · ${folders.size} 个音乐子文件夹。单文件夹模式使用文件夹内全部有效音乐，不受逐首勾选限制。`; return; }
+    const parents = new Set((state.scan.music || []).filter(song => Number.isFinite(Number(song.duration)) && Number(song.duration) > .1).map(song => song.path || '').filter(path => path.startsWith(root)).map(path => path.slice(0, path.lastIndexOf('/'))));
+    const ancestors = new Set();
+    for (const folder of parents) { let parent = folder.slice(0, folder.lastIndexOf('/')); while (parent && (parent + '/').startsWith(root)) { ancestors.add(parent); parent = parent.slice(0, parent.lastIndexOf('/')); } }
+    const folders = new Set([...parents].filter(folder => !ancestors.has(folder)));
+    if (folderMode) { $('#selection-summary').textContent = `已选 ${selectedVideo} 条视频 · ${folders.size} 个独立音乐文件夹。单文件夹模式使用文件夹内全部有效音乐，不受逐首勾选限制。`; return; }
     $('#selection-summary').textContent = `已选 ${selectedVideo}/${state.scan.videos?.length || 0} 条视频、${selectedMusic}/${state.scan.music?.length || 0} 首音乐。需要排除素材或调整视频分组时，到“素材”页展开列表。`;
   }
   function getConfig() {
