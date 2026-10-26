@@ -30,7 +30,7 @@ with tempfile.TemporaryDirectory(prefix='mixcut1813-') as tmp:
    for _ in range(100):
     try:boot=api('/api/bootstrap');break
     except OSError:time.sleep(.1)
-   assert boot['version']=='1.8.15'
+   assert boot['version']=='1.8.16'
    for _ in range(400):
     batch=next(b for b in api('/api/batches') if b['id']=='abc123')
     if all(i.get('thumbnails',{}).get('status')=='ready' for i in batch['items']):break
@@ -46,7 +46,7 @@ with tempfile.TemporaryDirectory(prefix='mixcut1813-') as tmp:
    assert not old.exists()
    runtime=Path.home()/'.cache/codex-runtimes/codex-primary-runtime/dependencies/node'
    subprocess.run([str(runtime/'bin/node'),'tests/ui_package_v1813.cjs'],env=dict(os.environ,NODE_PATH=str(runtime/'node_modules'),MIXCUT_TEST_URL=base),check=True,timeout=30)
-   print('V1.8.15 packaged acceptance passed: new 70-second video has two single-image frames at 0/60s; both sizes match actual colors; legacy ready 30s previews reused by hardlink without full regeneration; old cache removed; real UI says every60seconds with two frames.')
+   print('V1.8.16 packaged acceptance passed: new 70-second video has two single-image frames at 0/60s; both sizes match actual colors; legacy ready 30s previews reused by hardlink without full regeneration; old cache removed; real UI says every60seconds with two frames.')
   finally:
    try:api('/api/shutdown',{})
    except Exception:pass

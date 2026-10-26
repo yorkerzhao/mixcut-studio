@@ -25,12 +25,12 @@ with tempfile.TemporaryDirectory(prefix='mixcut186-') as tmp:
    for _ in range(100):
     try:boot=api('/api/bootstrap');break
     except OSError:time.sleep(.1)
-   assert boot['version']=='1.8.15'
+   assert boot['version']=='1.8.16'
    runtime=Path.home()/'.cache/codex-runtimes/codex-primary-runtime/dependencies/node'
    subprocess.run([str(runtime/'bin/node'),'tests/ui_package_v186.cjs'],env=dict(os.environ,NODE_PATH=str(runtime/'node_modules'),MIXCUT_TEST_URL=base),check=True,timeout=60)
    assert not bad.exists();assert changing.exists();assert song.exists();assert good.exists()
    assert len(api('/api/bootstrap')['scan']['errors'])==2
-   print('V1.8.15 packaged acceptance passed: real scan, real browser button, actual API, native Trash, changed recording preserved, valid video and music preserved, persisted errors updated.')
+   print('V1.8.16 packaged acceptance passed: real scan, real browser button, actual API, native Trash, changed recording preserved, valid video and music preserved, persisted errors updated.')
   finally:
    try:api('/api/shutdown',{})
    except Exception:pass

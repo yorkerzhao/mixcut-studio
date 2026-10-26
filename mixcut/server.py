@@ -31,7 +31,7 @@ from .folders import batch_output_folder, choose_folder, reveal
 from .fsutil import flush_to_disk, publish
 from .keyframes import KeyframeCache
 from .lockfile import LockUnavailable, acquire as acquire_lock, release as release_lock
-from .naming import export_filename, music_folders, music_styles, tag_music_style
+from .naming import duration_filename, item_filename, export_filename, music_folders, music_styles, tag_music_style
 from .trash import move_to_trash
 from .planner import video_plan_key
 from .runtime import API_PROTOCOL, activate_bundled_tools, app_version, data_root, resource_root
@@ -559,10 +559,11 @@ class Application:
             config.update(count=1, sticker_template_id=template.get('id'),
                           sticker_template=template, sticker_layers=layers)
             styles = source_item.get('music_styles') or music_styles(source_item.get('music', []))
-            filename = export_filename(styles, 1) if styles else source.name
+            filename = source.name if source_item.get('output_naming') else (export_filename(styles, 1) if styles else source.name)
             from .tracklist import for_item
             item = {'include_track_titles':source_item.get('include_track_titles', False),
                     'played_music':for_item(source_item),
+                    **({'output_naming':source_item['output_naming']} if source_item.get('output_naming') else {}),
                     'id': uuid.uuid4().hex, 'index': 1, 'kind': 'sticker_variant',
                     'duration': source_item['duration'], 'segments': [], 'music': [],
                     'music_source_folders': source_item.get('music_source_folders') or
@@ -919,10 +920,11 @@ class Application:
             item['index'] = index + index_offset
             item.update(status='pending', progress=0, error=None, attempts=0)
             item.setdefault('include_track_titles', bool(config.get('include_track_titles', False)))
+            item['output_naming'] = 'duration-youtube-v1'
             item['music'] = [tag_music_style(song, music_root) for song in item.get('music', [])]
             item['music_source_folders'] = music_folders(item['music'])
             item['music_styles'] = music_styles(item['music'], music_root)
-            item['output_name'] = export_filename(item['music_styles'], item['index'])
+            item['output_name'] = item_filename(item)
             folder, _ = self.reserve_review_bundle(output_folder, item, label=output.name)
             item['output_bundle'] = str(folder)
             item['output_path'] = str(folder / item['output_name'])
@@ -989,7 +991,7 @@ class Application:
         item['music_fingerprint'] = self._fingerprint(tuple(song['id'] for song in item['music']))
         item['music_source_folders'] = music_folders(item['music'])
         item['music_styles'] = music_styles(item['music'], root)
-        item['output_name'] = export_filename(item['music_styles'], item['index'])
+        item['output_name'] = item_filename(item)
         item['output_path'] = str(Path(item.get('output_bundle') or batch['output_folder']) / item['output_name'])
         self._update_plan_counts(batch)
 
@@ -1977,6 +1979,43 @@ class Application:
             with self.store.lock:
                 self.render_claims.discard(key)
 
+    def finalize_output_name(self, batch_id, index, duration=None):
+        item = self.batch(batch_id)['items'][index]
+        if item.get('output_naming') != 'duration-youtube-v1':
+            return Path(item['output_path'])
+        intent = item.get('output_rename')
+        if not intent:
+            source = Path(item['output_path'])
+            basename = duration_filename(item, duration)
+            target = source.with_name(basename)
+            if source == target or item.get('output_name_base') == basename:
+                return source
+            stem, suffix, number = target.stem, target.suffix, 2
+            while target.exists():
+                target = source.with_name(f'{stem}-{number:02d}{suffix}')
+                number += 1
+            stat = source.stat()
+            intent = {'source':str(source), 'target':str(target), 'basename':basename,
+                      'size':stat.st_size, 'mtime_ns':stat.st_mtime_ns}
+            self.store.update(batch_id, lambda b: b['items'][index].update(output_rename=intent))
+        source, target = Path(intent['source']), Path(intent['target'])
+        if target.exists():
+            stat = target.stat()
+            if stat.st_size != intent['size'] or stat.st_mtime_ns != intent['mtime_ns']:
+                raise ValueError('成片重命名目标已存在且不匹配，已保留文件，请检查')
+            if source.exists():
+                if not os.path.samefile(source, target):
+                    raise ValueError('成片重命名目标冲突，已保留文件，请检查')
+                source.unlink()
+        else:
+            publish(source, target)
+        def finish(batch):
+            record = batch['items'][index]
+            record.update(output_name=target.name, output_path=str(target), output_name_base=intent['basename'])
+            record.pop('output_rename', None)
+        self.store.update(batch_id, finish)
+        return target
+
     def _execute_item(self, batch_id, index):
         from .processwatch import RenderStalled
         from .checkpoints import VideoRecoveryNeeded
@@ -1986,6 +2025,13 @@ class Application:
         if (item['status'] != 'pending' or item.get('dismissed') or self.closing.is_set()
                 or batch['status'] != 'running' or batch.get('scheduled_cancelled')):
             return
+        if item.get('output_rename'):
+            try:
+                self.finalize_output_name(batch_id, index)
+                item = self.batch(batch_id)['items'][index]
+            except (OSError, ValueError) as exc:
+                self.store.update(batch_id, lambda b: b['items'][index].update(status='failed', error=str(exc)))
+                return
         output = Path(item['output_path'])
         try:
             output.parent.mkdir(parents=True, exist_ok=True)
@@ -2020,6 +2066,8 @@ class Application:
                     self.store.update(batch_id, lambda b: b['items'][index].update(
                         segments=recovered['rendered_segments'], video_assets=item.get('checkpoint_video_assets', item.get('video_assets', [])),
                         duration=metadata['duration'], checkpoint_segments=[]))
+                metadata.setdefault('duration', item['duration'])
+                output = self.finalize_output_name(batch_id, index, metadata['duration'])
                 metadata.update(output_size=output.stat().st_size, output_mtime_ns=output.stat().st_mtime_ns)
                 self.store.update(batch_id, lambda b: b['items'][index].update(
                     status='success', progress=1, result=metadata, error=None, thumbnails={'status': 'queued'}))
@@ -2159,6 +2207,7 @@ class Application:
                     self.store.update(batch_id, lambda b: b['items'][index].update(
                         segments=actual_segments, video_assets=actual_assets, checkpoint_segments=[]))
                     self.store.update(batch_id, self._update_plan_counts)
+                output = self.finalize_output_name(batch_id, index, result.get('duration', item['duration']))
                 result.update(output_size=output.stat().st_size, output_mtime_ns=output.stat().st_mtime_ns,
                               planned_duration=item.get('planned_duration', item['duration']))
                 result.setdefault('duration', item['duration'])
