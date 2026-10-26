@@ -2294,7 +2294,19 @@ class Application:
         for item in batch.get('items', []):
             if item.get('status') != 'success':
                 continue
-            self.write_music_sidecar(item, item['output_path'], replace=True)
+            review = item.get('review', {})
+            target = review.get('path') if review.get('status') == 'approved' else item.get('output_path')
+            try:
+                # A completed work may have been moved outside the app. Never
+                # recreate its old directory or let its optional TXT stop the queue.
+                if not target or not Path(target).is_file():
+                    continue
+                self.write_music_sidecar(item, target, replace=True)
+            except OSError as exc:
+                # The directory can also disappear after the check above. The
+                # durable manifest is already saved; isolate only this sidecar.
+                logging.warning('music sidecar update failed batch=%s item=%s path=%s: %s; queue continues',
+                                batch_id, item.get('id'), target, exc)
 
     def set_track_titles(self, body):
         enabled = body.get('enabled')
