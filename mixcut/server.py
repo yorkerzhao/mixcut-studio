@@ -48,6 +48,7 @@ class Store:
         self.directory.mkdir(parents=True, exist_ok=True)
         self.path = self.directory / 'state.sqlite3'
         self.lock = threading.RLock()
+        self._connections = threading.local()
         with self.connection() as conn:
             conn.execute('CREATE TABLE IF NOT EXISTS records (id TEXT PRIMARY KEY, body TEXT NOT NULL)')
             from . import folderusage
@@ -59,12 +60,22 @@ class Store:
 
     @contextmanager
     def connection(self):
-        connection = sqlite3.connect(self.path, timeout=30)
-        try:
-            with connection:
-                yield connection
-        finally:
-            connection.close()
+        # Nested Store calls must share the outer transaction. A second SQLite
+        # connection cannot read through this thread's own uncommitted write lock.
+        # Only the outer context commits/rolls back and closes the connection.
+        with self.lock:
+            active = getattr(self._connections, 'active', None)
+            if active is not None:
+                yield active
+                return
+            connection = sqlite3.connect(self.path, timeout=30)
+            self._connections.active = connection
+            try:
+                with connection:
+                    yield connection
+            finally:
+                del self._connections.active
+                connection.close()
 
     def get(self, key, default=None):
         with self.lock, self.connection() as conn:
@@ -1460,7 +1471,7 @@ class Application:
                         batch['updated_at'] = time.time()
                         conn.execute('UPDATE records SET body=? WHERE id=?',
                                      (json.dumps(batch, ensure_ascii=False), 'batch:' + batch_id))
-                        changed[batch_id] = self._visible_batch(batch)
+                        changed[batch_id] = batch
                     else:
                         conn.execute('DELETE FROM records WHERE id=?', ('batch:' + batch_id,))
                         changed[batch_id] = None
@@ -1474,6 +1485,9 @@ class Application:
         finally:
             if review_available:
                 self.review_lock.release()
+        # Rendering the response may inspect cache files and query the Store.
+        # Do it after commit, never while holding the write transaction.
+        changed = {key: self._visible_batch(batch) for key, batch in changed.items()}
         cleanup_errors = []
         if preserve_files:
             with self.preview_lock:

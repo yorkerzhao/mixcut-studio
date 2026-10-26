@@ -23,7 +23,7 @@ with tempfile.TemporaryDirectory(prefix='mixcut1816-') as tmp:
   proc=subprocess.Popen([sys.argv[1],'--server','--port',str(port),'--state-dir',str(state)],stdout=log,stderr=log)
   try:
    for _ in range(100):
-    try:assert api('/api/bootstrap')['version']=='1.8.16';break
+    try:assert api('/api/bootstrap')['version']=='1.8.17';break
     except OSError:time.sleep(.1)
    runtime=Path.home()/'.cache/codex-runtimes/codex-primary-runtime/dependencies/node'
    subprocess.run([str(runtime/'bin/node'),'tests/ui_package_v1816.cjs'],env=dict(os.environ,NODE_PATH=str(runtime/'node_modules'),MIXCUT_TEST_URL=base),check=True,timeout=45)
@@ -58,8 +58,8 @@ with tempfile.TemporaryDirectory(prefix='mixcut1816-') as tmp:
    assert txt.stem==video.stem and '曲目列表' in txt.read_text()
    assert list(video.parent.glob('*.mp4'))==[video]
    ff('-xerror','-i',str(video),'-f','null','-')
-   print('V1.8.16 packaged real render passed: duration/YouTube ID filename, matching TXT with track list, playback decode, thumbnails ready; music preserved.')
-   print('V1.8.16 frozen API/UI passed: real recursive scan, 4 separate sets at varying depth including 10 levels, 01/02 anchored, 2 rounds=6 tracks/6 seconds; direct leaf root scan and planning passed. Actual render and sidecar naming verified.')
+   print('V1.8.17 packaged real render passed: duration/YouTube ID filename, matching TXT with track list, playback decode, thumbnails ready; music preserved.')
+   print('V1.8.17 frozen API/UI passed: real recursive scan, 4 separate sets at varying depth including 10 levels, 01/02 anchored, 2 rounds=6 tracks/6 seconds; direct leaf root scan and planning passed. Actual render and sidecar naming verified.')
   finally:
    try:api('/api/shutdown',{})
    except Exception:pass
