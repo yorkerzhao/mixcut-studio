@@ -582,6 +582,9 @@ class Application:
                     'source_asset': source_asset, 'status': 'pending', 'progress': 0, 'error': None, 'attempts': 0,
                     'music_styles': styles, 'output_name': filename,
                     'output_bundle':str(folder), 'output_path': str(folder / filename)}
+            if item.get('output_naming') == 'bundle-library-v1':
+                item['output_name'] = item_filename(item)
+                item['output_path'] = str(folder / item['output_name'])
             origin = {'batch_id': source_batch_id, 'item_id': source_item_id, 'signature': signature,
                       'template_name': template['name'], 'replace_origin_on_approval': True}
             batch = {'id': batch_id, 'status': 'draft', 'created_at': time.time(), 'updated_at': time.time(),
@@ -931,13 +934,13 @@ class Application:
             item['index'] = index + index_offset
             item.update(status='pending', progress=0, error=None, attempts=0)
             item.setdefault('include_track_titles', bool(config.get('include_track_titles', False)))
-            item['output_naming'] = 'duration-youtube-v1'
+            item['output_naming'] = 'bundle-library-v1'
             item['music'] = [tag_music_style(song, music_root) for song in item.get('music', [])]
             item['music_source_folders'] = music_folders(item['music'])
             item['music_styles'] = music_styles(item['music'], music_root)
-            item['output_name'] = item_filename(item)
             folder, _ = self.reserve_review_bundle(output_folder, item, label=output.name)
             item['output_bundle'] = str(folder)
+            item['output_name'] = item_filename(item)
             item['output_path'] = str(folder / item['output_name'])
         for folder in folder_catalog:
             folder['historical_usage'] = history.get(folder['path'], {'completed': 0, 'pending': 0, 'last_used': 0})
@@ -1995,12 +1998,13 @@ class Application:
 
     def finalize_output_name(self, batch_id, index, duration=None):
         item = self.batch(batch_id)['items'][index]
-        if item.get('output_naming') != 'duration-youtube-v1':
+        if item.get('output_naming') not in {'duration-youtube-v1', 'bundle-library-v1'}:
             return Path(item['output_path'])
         intent = item.get('output_rename')
         if not intent:
             source = Path(item['output_path'])
-            basename = duration_filename(item, duration)
+            basename = (item_filename(item) if item.get('output_naming') == 'bundle-library-v1'
+                        else duration_filename(item, duration))
             target = source.with_name(basename)
             if source == target or item.get('output_name_base') == basename:
                 return source
@@ -2777,6 +2781,7 @@ class Application:
                     def update_paths(current):
                         next(i for i in current['items'] if i['id'] == iid).update(
                             output_path=value['output_path'], output_bundle=value.get('output_bundle'),
+                            output_name=value.get('output_name', Path(value['output_path']).name),
                             bundle_relocation=value.get('bundle_relocation'))
                         if current.get('output_folder') == old_bundle:
                             current.update(output_folder=value['output_bundle'], folder_name=Path(value['output_bundle']).name)

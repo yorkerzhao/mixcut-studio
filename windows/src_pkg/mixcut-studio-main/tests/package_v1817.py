@@ -29,7 +29,7 @@ with tempfile.TemporaryDirectory(prefix='mixcut1817-') as tmp:
   proc=subprocess.Popen([sys.argv[1],'--server','--port',str(port),'--state-dir',str(state)],stdout=log,stderr=log)
   try:
    for _ in range(100):
-    try:assert api('/api/bootstrap')['version']=='1.8.17';break
+    try:assert api('/api/bootstrap')['version']=='1.8.18';break
     except OSError:time.sleep(.1)
    start=time.monotonic()
    result=api('/api/tasks/forget',{'selections':[{'batch_id':'abc123','item_ids':['72']}]})
@@ -40,7 +40,7 @@ with tempfile.TemporaryDirectory(prefix='mixcut1817-') as tmp:
    assert not api('/api/batches')
    assert raw.exists() and music.exists() and (out/'000/video.mp4').exists()
    assert not any('database is locked' in line for line in (root/'server.log').read_text().splitlines())
-   print('V1.8.17 frozen API/UI passed: 73 rows with ~4 MB payload; partial delete preserves approved survivor; browser Delete All removes remaining72; source video/music and approved work preserved; no database lock.')
+   print('V1.8.18 frozen API/UI passed: 73 rows with ~4 MB payload; partial delete preserves approved survivor; browser Delete All removes remaining72; source video/music and approved work preserved; no database lock.')
   finally:
    try:api('/api/shutdown',{})
    except Exception:pass

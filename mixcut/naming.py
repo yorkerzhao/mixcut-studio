@@ -1,6 +1,7 @@
 """Music-folder labels and portable export filenames; no audio-style guessing."""
 import hashlib
 import math
+import unicodedata
 from pathlib import Path
 import re
 
@@ -99,7 +100,27 @@ def duration_filename(item, duration=None):
     return f'{hours}小时{minutes}分{seconds}秒-{label}.mp4'
 
 
+def bundle_library_filename(item):
+    """Trace a work to its bundle number and original leaf library names."""
+    bundle = Path(item.get('output_bundle') or Path(item.get('output_path', '')).parent).name
+    folders = ([item['music_folder']] if item.get('music_folder') else
+               music_folders(item.get('music', [])) or item.get('music_source_folders', []))
+    names = list(dict.fromkeys(Path(folder).name for folder in folders if Path(folder).name))
+    label = '__'.join(names) if names else '未识别曲库'
+    label = unicodedata.normalize('NFC', label)
+    label = re.sub(r'[^\w.\-]+', '_', label).strip(' ._') or '未识别曲库'
+    bundle = re.sub(r'[^A-Za-z0-9_-]', '_', bundle) or '未编号'
+    budget = max(32, 220 - len(bundle.encode('utf-8')) - 5)
+    if len(label.encode('utf-8')) > budget:
+        identity = youtube_id(names[0]) if names else None
+        suffix = ('_' + identity if identity else '') + '_' + hashlib.sha256(label.encode()).hexdigest()[:8]
+        label = label.encode('utf-8')[:budget-len(suffix)].decode('utf-8', errors='ignore').rstrip(' ._') + suffix
+    return f'{bundle}_{label}.mp4'
+
+
 def item_filename(item):
+    if item.get('output_naming') == 'bundle-library-v1':
+        return bundle_library_filename(item)
     if item.get('output_naming') == 'duration-youtube-v1':
         return duration_filename(item)
     return export_filename(item.get('music_styles', []), item['index'])

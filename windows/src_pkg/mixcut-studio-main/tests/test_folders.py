@@ -66,7 +66,7 @@ class FolderTests(unittest.TestCase):
                                                 'music_mode': 'fixed'}})
         directory = Path(result['output_folder'])
         self.assertRegex(directory.name, r'^\d{4}-\d{2}-\d{2}$')
-        self.assertEqual(directory / (datetime.now().astimezone().strftime('%y%m%d') + '-001') / '0小时0分10秒-未识别ID.mp4', Path(result['items'][0]['output_path']))
+        self.assertEqual(directory / (datetime.now().astimezone().strftime('%y%m%d') + '-001') / (datetime.now().astimezone().strftime('%y%m%d') + '-001_未识别曲库.mp4'), Path(result['items'][0]['output_path']))
         self.app.write_manifest(result['id'])
         self.assertTrue((self.app.store.directory / 'manifests' / result['id'] / 'manifest.json').is_file())
         self.assertEqual(directory, batch_output_folder(result))

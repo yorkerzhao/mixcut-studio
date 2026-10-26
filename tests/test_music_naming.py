@@ -78,13 +78,13 @@ class MusicNamingTests(unittest.TestCase):
                 'music': [{'id': 'song', 'path': str(song_path), 'duration': 3}]}})
             batch = app.create_plan({'config': {'count': 1, 'music_mode': 'fixed', 'output_dir': str(root / 'out')}})
             item = batch['items'][0]
-            self.assertEqual('0小时0分3秒-未识别ID.mp4', Path(item['output_path']).name)
+            self.assertEqual(Path(item['output_bundle']).name + '_Hindi_POP_Songs.mp4', Path(item['output_path']).name)
             self.assertEqual(['Hindi POP Songs'], item['music_styles'])
             self.assertEqual('Hindi POP Songs', app.bootstrap()['scan']['music'][0]['music_style'])
             Path(item['output_path']).write_bytes(b'completed-video')
             app.store.update(batch['id'], lambda b: b['items'][0].update(status='success'))
             reviewed = app.approve({'batch_id': batch['id'], 'item_id': item['id'], 'review_dir': str(root / 'approved')})
-            self.assertEqual('0小时0分3秒-未识别ID.mp4', Path(reviewed['items'][0]['review']['path']).name)
+            self.assertEqual(Path(item['output_bundle']).name + '_Hindi_POP_Songs.mp4', Path(reviewed['items'][0]['review']['path']).name)
             self.assertTrue(Path(item['output_path']).exists())
             self.assertTrue(Path(reviewed['items'][0]['review']['path']).is_file())
 
